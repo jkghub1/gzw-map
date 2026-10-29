@@ -67,6 +67,9 @@
                 border-radius: 6px; padding: 6px 10px; font: inherit; cursor: pointer; }
   #ctx button:hover { background: rgba(255,255,255,0.1); }
   #ctx b { font: 600 13px Consolas, monospace; color: var(--accent); margin-left: 6px; }
+  /* J's pixel pointers: arrow everywhere (buttons and links too); hand while the left mouse button is held. */
+  html, html * { cursor: url(cursor-arrow.svg) 0 0, default !important; }
+  html.lmb-down, html.lmb-down * { cursor: url(cursor-hand.svg) 9 1, grabbing !important; }
 </style>
 </head>
 <body>
@@ -109,7 +112,7 @@
         integrity="sha512-VKBuvrXdP1AXvfs+m4l3ZNZSI4PFJF0K0hGJJZ4RiNRkvFMO4IwFRHkoTc7xsdZhMgkLn+Ioq4elndAZicBcRQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="data.js?v=2026-10-29-5d9b50"></script>
-<script src="app.js?v=007582"></script>
+<script src="app.js?v=f1e7bc"></script>
 <!-- Visitor count (GoatCounter: no cookies, no IPs stored; skips localhost). Dashboard: https://gzwmap.goatcounter.com -->
 <script data-goatcounter="https://gzwmap.goatcounter.com/count" async src="https://gc.zgo.at/count.v5.js"
         crossorigin="anonymous" integrity="sha384-atnOLvQb9t+jTSipvd75X2yginT4PjVbqDdlJAmxMm+wYElFmeR6EmLP5bYeoRVQ"></script>

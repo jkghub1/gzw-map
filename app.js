@@ -462,4 +462,10 @@ ctxCopy.addEventListener("click", async () => {
 document.addEventListener("pointerdown", e => { if (!ctxMenu.contains(e.target)) hideCtx(); }, true);
 viewer.addHandler("animation-start", hideCtx);
 
+// Hand pointer while the left mouse button is held (capture phase, so the viewer's own handlers can't swallow it).
+const lmbUp = () => document.documentElement.classList.remove("lmb-down");
+document.addEventListener("pointerdown", e => { if (e.button === 0) document.documentElement.classList.add("lmb-down"); }, true);
+for (const ev of ["pointerup", "pointercancel"]) document.addEventListener(ev, e => { if (e.button === 0 || e.buttons === 0) lmbUp(); }, true);
+addEventListener("blur", lmbUp);
+
 document.addEventListener("keydown", e => { if (e.key === "Escape") { hideCtx(); showAbout(false); } if (e.key === "0") viewer.viewport.goHome(); });
