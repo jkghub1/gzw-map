@@ -360,7 +360,7 @@ const LAYER_DEFS = [
   ["lzs", "Landing zones", SW(`<path d="M0-6 6 0 0 6-6 0Z" fill="${COLORS.lz}" stroke="#000" stroke-width="1.5"/>`)],
   ["cops", "COPs", SW(`<path d="M0-6 6 5-6 5Z" fill="${COLORS.cop}" stroke="#000" stroke-width="1.5"/>`)],
   ["bases", "Bases", SW(`<rect x="-5" y="-5" width="10" height="10" fill="${COLORS.base}" stroke="#000" stroke-width="1.5"/>`)],
-  ["route", "Loot route", SW(`<path d="M-6 4 -1-2 2 2 6-5" fill="none" stroke="${RUN_COLORS[0]}" stroke-width="2.5"/>`)],
+  ["route", `Loot route <span class="prealpha">PRE-<br>ALPHA</span>`, SW(`<path d="M-6 4 -1-2 2 2 6-5" fill="none" stroke="${RUN_COLORS[0]}" stroke-width="2.5"/>`)],
 ];
 const layerBar = document.getElementById("layers");
 for (const [key, name, svg] of LAYER_DEFS) {

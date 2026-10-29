@@ -50,7 +50,12 @@
   #aboutBack { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,0.45); display: none; }
   #about { position: fixed; z-index: 41; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 32px));
            max-height: calc(100vh - 32px); overflow: auto; padding: 18px 20px; display: none; font-size: 13px; }
-  #about h2 { margin: 0 0 4px; font-size: 17px; }
+  #about h2, #about .brand { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  #about .brand { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 10px; }
+  #about .brand img { height: 31.6px; width: auto; }   /* same height as the top-bar buttons */
+  /* Two-line "PRE-ALPHA" label (Loot route button and About panel). */
+  .prealpha { display: inline-block; vertical-align: middle; color: var(--accent); font: 700 9px/1 "Segoe UI", system-ui, sans-serif;
+              letter-spacing: 1px; text-align: center; }
   #about h3 { margin: 14px 0 4px; font-size: 13px; color: var(--accent); }
   #about p, #about ul { margin: 4px 0; }
   #about ul { padding-left: 18px; }
@@ -70,6 +75,7 @@
 <div id="aboutBack"></div>
 <div id="about" class="panel" role="dialog" aria-labelledby="aboutTitle">
   <button class="close" title="Close (Esc)">×</button>
+  <div class="brand"><img src="logo.svg" alt="Cabins logo"><span>Cabins</span></div>
   <h2 id="aboutTitle">GZW Lamang Map (patch 0.5)</h2>
   <p class="muted">Unofficial fan-made map. Not affiliated with, endorsed by, or sponsored by MADFINGER Games or GZW Tac Map.
      Markers and camp ratings can be out of date or wrong, so always check in game.</p>
@@ -83,7 +89,7 @@
   <h3>Data</h3>
   <p>Patch 0.5 "Rogue Ops" · last updated <span class="updated"></span>.<br>
      Grid: 1 square = 100 m, 10 squares = 1 km. Right-click the map to copy coordinates.</p>
-  <h3>Loot routes</h3>
+  <h3>Loot routes <span class="prealpha">PRE-<br>ALPHA</span></h3>
   <p class="muted">Planned for a Lamang Recovery Initiative player: walk legs up to 800 m, heli hops between LZs for longer gaps,
      unload at COPs/LZs at least every 10 stops; skips Ground Zero, "bad" camps and other factions' LZs.</p>
   <p class="muted">Source and full credits: <a href="https://github.com/jkghub1/gzw-map" target="_blank" rel="noopener">github.com/jkghub1/gzw-map</a>.
@@ -102,7 +108,7 @@
         integrity="sha512-VKBuvrXdP1AXvfs+m4l3ZNZSI4PFJF0K0hGJJZ4RiNRkvFMO4IwFRHkoTc7xsdZhMgkLn+Ioq4elndAZicBcRQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="data.js?v=2026-10-29-5d9b50"></script>
-<script src="app.js?v=6201d3"></script>
+<script src="app.js?v=007582"></script>
 <!-- Visitor count (GoatCounter: no cookies, no IPs stored; skips localhost). Dashboard: https://gzwmap.goatcounter.com -->
 <script data-goatcounter="https://gzwmap.goatcounter.com/count" async src="https://gc.zgo.at/count.v5.js"
         crossorigin="anonymous" integrity="sha384-atnOLvQb9t+jTSipvd75X2yginT4PjVbqDdlJAmxMm+wYElFmeR6EmLP5bYeoRVQ"></script>
