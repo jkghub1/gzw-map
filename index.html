@@ -20,9 +20,19 @@
   #layers select { background: #1a1e24; color: var(--text); border: 1px solid var(--line); border-radius: 7px;
                    padding: 4px 6px; font: inherit; }
   #layers .sep { width: 1px; background: var(--line); margin: 2px 2px; }
-  #coord { bottom: 12px; left: 12px; padding: 8px 14px; font: 600 18px/1.2 Consolas, monospace; color: var(--accent); }
+  /* Bottom bar: grid readout left, credits centred, help right. */
+  #bottom { position: absolute; z-index: 10; left: 12px; right: 12px; bottom: 12px; display: grid;
+            grid-template-columns: 1fr auto 1fr; align-items: end; gap: 10px; pointer-events: none; }
+  #bottom > .panel { position: static; pointer-events: auto; }
+  #coord { justify-self: start; padding: 8px 14px; font: 600 18px/1.2 Consolas, monospace; color: var(--accent); }
   #coord small { display: block; font: 12px "Segoe UI", sans-serif; color: var(--muted); margin-top: 2px; }
-  #help { bottom: 12px; right: 12px; padding: 6px 12px; color: var(--muted); font-size: 12px; max-width: 46vw; }
+  #help { justify-self: end; align-self: stretch; display: flex; flex-direction: column; justify-content: center;   /* same height as #coord */
+          padding: 6px 12px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+  @media (max-width: 900px) {   /* narrow screens: credits on their own row above the other two */
+    #bottom { grid-template-columns: auto 1fr; }
+    #credit { grid-column: 1 / -1; grid-row: 1; }
+    #help { white-space: normal; }
+  }
   #runs { bottom: 52px; right: 12px; padding: 8px 12px; font-size: 12px; display: none; }
   #runs div { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
   #runs i { display: inline-block; width: 22px; height: 4px; border-radius: 2px; }
@@ -30,6 +40,19 @@
          border-radius: 8px; padding: 6px 10px; font-size: 13px; display: none; white-space: nowrap; }
   #tip b { color: #fff; }
   #tip .muted { color: var(--muted); }
+  #credit { justify-self: center; padding: 6px 12px; font-size: 11px; color: var(--muted); text-align: center; }
+  #credit a, #about a { color: inherit; }
+  #credit a:hover, #about a:hover { color: var(--text); }
+  #layers button#aboutBtn { padding: 5px 9px; color: var(--text); }
+  #aboutBack { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,0.45); display: none; }
+  #about { position: fixed; z-index: 41; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 32px));
+           max-height: calc(100vh - 32px); overflow: auto; padding: 18px 20px; display: none; font-size: 13px; }
+  #about h2 { margin: 0 0 4px; font-size: 17px; }
+  #about h3 { margin: 14px 0 4px; font-size: 13px; color: var(--accent); }
+  #about p, #about ul { margin: 4px 0; }
+  #about ul { padding-left: 18px; }
+  #about .muted { color: var(--muted); }
+  #about .close { position: absolute; top: 8px; right: 10px; background: none; border: 0; color: var(--muted); font-size: 20px; cursor: pointer; }
   #ctx { position: absolute; z-index: 30; display: none; padding: 4px; min-width: 190px; }
   #ctx button { display: block; width: 100%; text-align: left; background: transparent; color: var(--text); border: 0;
                 border-radius: 6px; padding: 6px 10px; font: inherit; cursor: pointer; }
@@ -41,9 +64,34 @@
 <div id="map"></div>
 <canvas id="overlay"></canvas>
 <div id="layers" class="panel"></div>
-<div id="coord" class="panel">—<small>in-game grid under cursor</small></div>
+<div id="aboutBack"></div>
+<div id="about" class="panel" role="dialog" aria-labelledby="aboutTitle">
+  <button class="close" title="Close (Esc)">×</button>
+  <h2 id="aboutTitle">GZW Lamang Map (patch 0.5)</h2>
+  <p class="muted">Unofficial fan-made map. Not affiliated with, endorsed by, or sponsored by MADFINGER Games or GZW Tac Map.
+     Markers and camp ratings can be out of date or wrong, so always check in game.</p>
+  <h3>Credits</h3>
+  <ul>
+    <li>Gray Zone Warfare, the Lamang map and all game content © <a href="https://madfingergames.com/" target="_blank" rel="noopener">MADFINGER Games</a>.</li>
+    <li>Map imagery and marker positions: <a href="https://gzwtacmap.com/" target="_blank" rel="noopener">GZW Tac Map</a> and its contributors.</li>
+    <li>Zoom viewer: <a href="https://openseadragon.github.io/" target="_blank" rel="noopener">OpenSeadragon</a> (BSD 3-Clause).</li>
+    <li>Distance checks and camp ratings: in-game play by the map's author.</li>
+  </ul>
+  <h3>Data</h3>
+  <p>Patch 0.5 "Rogue Ops" · last updated <span class="updated"></span>.<br>
+     Grid: 1 square = 100 m, 10 squares = 1 km. Right-click the map to copy coordinates.</p>
+  <h3>Loot routes</h3>
+  <p class="muted">Planned for a Lamang Recovery Initiative player: walk legs up to 800 m, heli hops between LZs for longer gaps,
+     unload at COPs/LZs at least every 10 stops; skips Ground Zero, "bad" camps and other factions' LZs.</p>
+  <p class="muted">Source and full credits: <a href="https://github.com/jkghub1/gzw-map" target="_blank" rel="noopener">github.com/jkghub1/gzw-map</a>.
+     Content owners can request changes or removal via an issue there.</p>
+</div>
 <div id="runs" class="panel"></div>
-<div id="help" class="panel">Wheel = zoom · drag = pan · double-click = zoom in · right-click = copy coords · 0 = reset view</div>
+<div id="bottom">
+  <div id="coord" class="panel">—<small>in-game grid under cursor</small></div>
+  <div id="credit" class="panel">Unofficial fan map · Imagery &amp; markers: <a href="https://gzwtacmap.com/" target="_blank" rel="noopener">GZW Tac Map</a> · © <a href="https://madfingergames.com/" target="_blank" rel="noopener">MADFINGER Games</a> · Data: 0.5, updated <span class="updated"></span></div>
+  <div id="help" class="panel">Wheel = zoom · drag = pan · double-click = zoom in<br>right-click = copy coords · 0 = reset view</div>
+</div>
 <div id="tip"></div>
 <div id="ctx" class="panel"><button id="ctx-copy">Copy coords<b></b></button></div>
 
@@ -394,7 +442,7 @@ let pending = false;
 function redraw() { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; draw(); }); } }
 viewer.addHandler("update-viewport", redraw);
 viewer.addHandler("open", redraw);
-addEventListener("resize", () => { sizeCanvas(); redraw(); });
+addEventListener("resize", () => { sizeCanvas(); placeRuns(); redraw(); });
 sizeCanvas();
 
 // ---- Layer buttons ----
@@ -426,6 +474,20 @@ pick.onchange = () => {
 };
 layerBar.appendChild(pick);
 
+// About panel: full credits and disclaimer (the short version is the corner credit line).
+const about = document.getElementById("about"), aboutBack = document.getElementById("aboutBack");
+const showAbout = on => { about.style.display = aboutBack.style.display = on ? "block" : "none"; };
+const aboutBtn = document.createElement("button");
+aboutBtn.id = "aboutBtn"; aboutBtn.title = "About & credits"; aboutBtn.textContent = "ⓘ About";
+aboutBtn.onclick = () => showAbout(true);
+layerBar.appendChild(aboutBtn);
+aboutBack.onclick = about.querySelector(".close").onclick = () => showAbout(false);
+for (const el of document.querySelectorAll(".updated")) el.textContent = G.updated || "—";
+
+// Keep the run key just above the help box, whose height changes when it wraps.
+function placeRuns() {
+  document.getElementById("runs").style.bottom = (innerHeight - document.getElementById("help").getBoundingClientRect().top + 8) + "px";
+}
 function updateRuns() {
   const box = document.getElementById("runs");
   if (!layers.route) { box.style.display = "none"; return; }
@@ -437,6 +499,7 @@ function updateRuns() {
     `<div><i style="background:${RUN_COLORS[(n - 1) % RUN_COLORS.length]}"></i>Run ${n}: stops ${r.a}–${r.b}</div>`).join("") +
     `<div><i style="background:${COLORS.heli}"></i>Helicopter hop</div>`;
   box.style.display = "block";
+  placeRuns();
 }
 updateRuns();
 
@@ -494,7 +557,7 @@ ctxCopy.addEventListener("click", async () => {
 document.addEventListener("pointerdown", e => { if (!ctxMenu.contains(e.target)) hideCtx(); }, true);
 viewer.addHandler("animation-start", hideCtx);
 
-document.addEventListener("keydown", e => { if (e.key === "Escape") hideCtx(); if (e.key === "0") viewer.viewport.goHome(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { hideCtx(); showAbout(false); } if (e.key === "0") viewer.viewport.goHome(); });
 </script>
 </body>
 </html>
