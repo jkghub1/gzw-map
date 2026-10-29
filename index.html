@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- Content Security Policy: scripts only from this site and the pinned OpenSeadragon build on cdnjs. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<!-- Content Security Policy: scripts only from this site, the pinned OpenSeadragon build on cdnjs and the pinned GoatCounter script. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/ https://gc.zgo.at/count.v5.js; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/ https://gzwmap.goatcounter.com; connect-src 'self' https://gzwmap.goatcounter.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <title>GZW Lamang Viewer</title>
 <style>
@@ -103,5 +103,8 @@
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="data.js?v=2026-10-29-5d9b50"></script>
 <script src="app.js?v=6201d3"></script>
+<!-- Visitor count (GoatCounter: no cookies, no IPs stored; skips localhost). Dashboard: https://gzwmap.goatcounter.com -->
+<script data-goatcounter="https://gzwmap.goatcounter.com/count" async src="https://gc.zgo.at/count.v5.js"
+        crossorigin="anonymous" integrity="sha384-atnOLvQb9t+jTSipvd75X2yginT4PjVbqDdlJAmxMm+wYElFmeR6EmLP5bYeoRVQ"></script>
 </body>
 </html>
