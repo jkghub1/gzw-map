@@ -9,9 +9,8 @@ const G = window.GZW;
 // Each kind shrinks by TEXT_SHRINK.perZoom px per doubling of zoom until it reaches its minimum.
 // Danger-zone text is different (J): it follows a table of px sizes by zoom (1x, 2x, 3x, 4x+), straight lines in between,
 // and stays at the last size when zooming in further.
-// On localhost a debug panel edits these live.
 const TEXT_SHRINK = { perZoom: 2.5 };
-const TEXT_DEFAULTS = {   // J's chosen sizes (debug panel, 2026-10-30)
+const TEXT = {   // J's chosen sizes (2026-10-30)
   region:   { name: "Region names",    at1x: 16,   min: 15 },
   base:     { name: "Bases",           at1x: 15,   min: 14.5 },
   cop:      { name: "COPs",            at1x: 13,   min: 13 },
@@ -22,7 +21,6 @@ const TEXT_DEFAULTS = {   // J's chosen sizes (debug panel, 2026-10-30)
   distance: { name: "Route distances", at1x: 17,   min: 9.4 },
   zone:     { name: "Danger zones",    stops: [[1, 6], [2, 7], [3, 9], [4, 10]] },
 };
-const TEXT = structuredClone(TEXT_DEFAULTS);
 function textPx(kind) {
   const t = TEXT[kind];
   if (t.stops) {
@@ -35,11 +33,20 @@ function textPx(kind) {
   return Math.max(t.min, t.at1x - TEXT_SHRINK.perZoom * view.k);
 }
 const COLORS = {
-  trashed: "#ff4d2e", campsite: "#00c8ff", remote: "#be78ff", crate: "#3884ff", cache: "#a64dff", lz: "#ffdd00",
+  trashed: "#ff4d2e", campsite: "#00c8ff", remote: "#be78ff", crate: "#3884ff", cache: "#a64dff", lz: "#fdf535", lzOther: "#9a8a3a",
   cop: "#f5f5f5", base: "#2ecc71", heli: "#ff3d00", toolbox: "#ff9f1a",
-  good: "#5ae678", bad: "#ff5a5a", unknown: "#bec4cc",
+  good: "#5ae678", "good?": "#ffb000", bad: "#ff5a5a", unknown: "#bec4cc",
 };
-const CAMP_TEXT = { "Trashed Campsite": "#ffbeaf", "Campsite": "#a0e8ff", "Remote Campsite": "#dcbeff" };
+// Extra hover line for a camp status.
+const STATUS_NOTE = { "good?": "Not sure if spawns hideout loot" };
+// Playable factions (full names split over three lines on the map) and their logos.
+const FACTIONS = {
+  LRI: { name: "Lamang Recovery Initiative", logo: "factions/LRI.png", labelPos: "above" },
+  MSS: { name: "Mithras Security Systems", logo: "factions/MSS.png", labelPos: "below" },
+  CSI: { name: "Crimson Shield International", logo: "factions/CSI.png", labelPos: "above" },
+};
+for (const f of Object.values(FACTIONS)) { f.img = new Image(); f.img.onload = () => redraw(); f.img.src = f.logo; }
+const CAMP_TEXT = { "Trashed Campsite": "#a0e8ff", "Campsite": "#a0e8ff", "Remote Campsite": "#dcbeff" };
 const RUN_COLORS = ["#00e5ff", "#ff4081", "#76ff03", "#ffab00", "#d500f9", "#ffffff", "#00e676"];
 
 // ---- Persistent viewer state (per browser) ----
@@ -53,6 +60,10 @@ const layers = { locations: true, camps: true, crates: true, caches: true, toolb
 const savedLayers = load("gzw-layers", {});
 for (const k of Object.keys(layers)) if (typeof savedLayers?.[k] === "boolean") layers[k] = savedLayers[k];
 const campStatus = c => c.status || "unknown";
+// The faction you play: its LZs and the shared ones are normal, the other factions' LZs are dimmed.
+const savedFaction = load("gzw-faction", "LRI");
+let faction = Object.hasOwn(FACTIONS, savedFaction) ? savedFaction : "LRI";
+const lzOpen = l => !l.faction || l.faction === faction;
 const savedRoute = load("gzw-route", "all");
 let routeMode = Object.hasOwn(G.routes, savedRoute) ? savedRoute : "all";
 const R = () => G.routes[routeMode];
@@ -119,8 +130,10 @@ function textBox(lines, x, y, anchor) {
     L.width = measure(L);
     w = Math.max(w, L.width); h += L.px * 1.2;
   }
-  const bx = anchor === "center" ? x - w / 2 : x;
-  return { x: bx - 2, y: y - h / 2 - 2, w: w + 4, h: h + 4, lines, left: bx, top: y - h / 2 };
+  // anchor: "left" (starts at x, centred on y), "center" (centred on x,y), "above"/"below" (centred on x, ending/starting at y).
+  const bx = anchor === "left" ? x : x - w / 2;
+  const top = anchor === "above" ? y - h : anchor === "below" ? y : y - h / 2;
+  return { x: bx - 2, y: top - 2, w: w + 4, h: h + 4, lines, left: bx, top };
 }
 function drawText(box, center = false) {
   let ty = box.top;
@@ -144,7 +157,7 @@ function label(lines, x, y, anchor = "left", fallback = null) {
     box = textBox(fallback, x, y, anchor);
     if (!free(box)) return false;
   }
-  placed.push(box); drawText(box, anchor === "center");
+  placed.push(box); drawText(box, anchor !== "left");
   return true;
 }
 
@@ -171,9 +184,57 @@ const icon = {
   circle: (x, y, r, fill) => outlined(() => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); }, fill, 1.5),
   square: (x, y, r, fill) => outlined(() => { ctx.beginPath(); ctx.rect(x - r, y - r, 2 * r, 2 * r); }, fill, 1.5),
   diamond: (x, y, r, fill) => outlined(() => { ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath(); }, fill),
+  // Faction logo (white artwork) the size of a 2r square, with a dark halo so it reads on any terrain.
+  logo: (x, y, r, f) => {
+    if (!f.img.complete || !f.img.naturalWidth) { icon.square(x, y, r, COLORS.base); return; }
+    ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.9)"; ctx.shadowBlur = 4;
+    ctx.drawImage(f.img, x - r, y - r, 2 * r, 2 * r); ctx.drawImage(f.img, x - r, y - r, 2 * r, 2 * r);
+    ctx.restore();
+  },
   triangle: (x, y, r, fill) => outlined(() => { ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y + r * 0.8); ctx.lineTo(x - r, y + r * 0.8); ctx.closePath(); }, fill),
 };
-const campColor = t => t === "Trashed Campsite" ? COLORS.trashed : t === "Remote Campsite" ? COLORS.remote : COLORS.campsite;
+// J's LZ icon: 20x20 pixel art ("#" = black, "." = fill), a top-down helicopter in the GZW Tac Map yellow.
+// Drawn as a sprite at its native 20 px, scaled with nearest-neighbour so the pixels stay sharp.
+const LZ_PIXELS = [
+  "####################",
+  "####################",
+  "##................##",
+  "##.##....##....##.##",
+  "##..##..####..##..##",
+  "##...##.####.##...##",
+  "##....########....##",
+  "##.....######.....##",
+  "##......####......##",
+  "##.....######.....##",
+  "##....########....##",
+  "##...##..##..##...##",
+  "##..##...##...##..##",
+  "##.##....##....##.##",
+  "##.......##.......##",
+  "##.......##.......##",
+  "##......####......##",
+  "##................##",
+  "####################",
+  "####################",
+];
+const LZ_N = LZ_PIXELS.length;
+function lzSprite(fill) {
+  const c = document.createElement("canvas"); c.width = c.height = LZ_N;
+  const g = c.getContext("2d");
+  LZ_PIXELS.forEach((row, y) => [...row].forEach((ch, x) => { g.fillStyle = ch === "#" ? "#000" : fill; g.fillRect(x, y, 1, 1); }));
+  return c;
+}
+const LZ_SPRITE = { open: lzSprite(COLORS.lz), other: lzSprite(COLORS.lzOther) };
+icon.lz = (x, y, r, open) => {
+  const s = LZ_N;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(open ? LZ_SPRITE.open : LZ_SPRITE.other, Math.round(x - s / 2), Math.round(y - s / 2), s, s);
+  ctx.imageSmoothingEnabled = true;
+};
+// Same pixels as an SVG, for the layer button.
+const LZ_SVG = `<svg width="14" height="14" viewBox="0 0 ${LZ_N} ${LZ_N}" shape-rendering="crispEdges"><rect width="${LZ_N}" height="${LZ_N}" fill="${COLORS.lz}"/>` +
+  `<path d="${LZ_PIXELS.flatMap((row, y) => [...row].map((ch, x) => ch === "#" ? `M${x} ${y}h1v1h-1z` : "")).join("")}"/></svg>`;
+const campColor = () => COLORS.campsite;   // every camp icon is blue (J); the type shows in the label
 
 // ---- Route ----
 function dashedLine(a, b, color, width, dash) {
@@ -371,8 +432,8 @@ function draw() {
   }
   if (layers.lzs) for (const l of G.lzs) {
     const [x, y] = toScreen(l.X, l.Y); if (!onScreen(x, y)) continue;
-    icon.diamond(x, y, r + 1, l.lri ? COLORS.lz : "#9a8a3a");
-    hits.push({ x, y, r: r + 4, tip: `<b>LZ ${esc(l.name)}</b><br><span class="muted">${esc(l.grid)}${l.lri ? "" : " · other faction"}</span>` });
+    icon.lz(x, y, r, lzOpen(l));
+    hits.push({ x, y, r: r + 4, tip: `<b>LZ ${esc(l.name)}</b><br><span class="muted">${esc(l.grid)}${lzOpen(l) ? "" : " · other faction"}</span>` });
     vis.push(["lz", l, x, y]);
   }
   if (layers.cops) for (const c of G.cops) {
@@ -383,15 +444,17 @@ function draw() {
   }
   if (layers.bases) for (const b of G.bases) {
     const [x, y] = toScreen(b.X, b.Y); if (!onScreen(x, y)) continue;
-    icon.square(x, y, r + 3, COLORS.base);
-    hits.push({ x, y, r: r + 6, tip: `<b>${esc(b.name)}</b><br><span class="muted">${esc(b.grid)}</span>` });
+    icon.logo(x, y, r + 3, FACTIONS[b.faction]);
+    hits.push({ x, y, r: r + 6, tip: `<b>${esc(FACTIONS[b.faction].name)}</b> · Operation Base<br><span class="muted">${esc(b.grid)}</span>` });
     vis.push(["base", b, x, y]);
   }
   if (layers.camps) for (const c of G.camps) {
     const [x, y] = toScreen(c.X, c.Y); if (!onScreen(x, y)) continue;
     const st = campStatus(c);
     campIcons.push([x, y, c, st]);
-    hits.push({ x, y, r: r + 5, camp: c, tip: `<b>${esc(c.letter)}</b> · ${esc(c.type)} <span style="color:${esc(COLORS[st] || COLORS.unknown)}">(${esc(st)})</span><br><span class="muted">${esc(c.grid)} · ${esc(c.area)}</span>` });
+    hits.push({ x, y, r: r + 5, camp: c, tip: `<b>${esc(c.letter)}</b> · ${esc(c.type)} <span style="color:${esc(COLORS[st] || COLORS.unknown)}">(${esc(st)})</span>` +
+      (STATUS_NOTE[st] ? `<br><span style="color:${esc(COLORS[st])}">${esc(STATUS_NOTE[st])}</span>` : "") +
+      `<br><span class="muted">${esc(c.grid)} · ${esc(c.area)}</span>` });
     vis.push(["camp", c, x, y]);
   }
 
@@ -410,18 +473,21 @@ function draw() {
     if (kind === "camp") {
       const st = campStatus(o);
       const line1 = { parts: [[o.letter + " ", "#fff"], [`(${st})`, COLORS[st]]], px: textPx("camp1"), bold: true };
-      const line2 = { parts: [[`${o.type} ${o.grid}`, CAMP_TEXT[o.type]]], px: textPx("camp2"), bold: false };
-      label([line1, line2], lx, y, "left", [line1]);
+      // Type and grid under the letter; "Trashed Campsite" goes over two lines ("Trashed" / "Campsite x,y").
+      const words = o.type.split(" "), rest = words.length > 1 && words[0] === "Trashed" ? [words[0], words.slice(1).join(" ")] : [o.type];
+      const more = rest.map((t, i) => ({ parts: [[i === rest.length - 1 ? `${t} ${o.grid}` : t, CAMP_TEXT[o.type]]], px: textPx("camp2"), bold: false }));
+      label([line1, ...more], lx, y, "left", [line1]);
     } else if (kind === "base") {
-      label([{ parts: [[o.name, "#aaffc8"]], px: textPx("base"), bold: true }], lx, y);
+      const f = FACTIONS[o.faction], gap = r + 3 + 3;   // name sits above or below the logo (J)
+      label(f.name.split(" ").map(w => ({ parts: [[w, "#aaffc8"]], px: textPx("base"), bold: true })),
+            x, f.labelPos === "below" ? y + gap : y - gap, f.labelPos);
     } else if (kind === "cop") {
       label([{ parts: [["COP " + o.name, "#f5f5f5"]], px: textPx("cop"), bold: false }], lx, y);
     } else {
-      label([{ parts: [["LZ " + o.name, "#ffec8c"]], px: textPx("lz"), bold: false }], lx, y);
+      label([{ parts: [[o.name, COLORS.lz]], px: textPx("lz"), bold: false }], lx, y);   // the icon already says LZ
     }
   }
   if (layers.route) drawDistances(textPx("distance"));
-  if (textDebug) textDebug.refresh();
   for (const [x, y, c, st] of campIcons) {
     icon.circle(x, y, r, campColor(c.type));
     if (st !== "unknown") { ctx.lineWidth = 2.5; ctx.strokeStyle = COLORS[st]; ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, Math.PI * 2); ctx.stroke(); }
@@ -461,87 +527,6 @@ function drawDistances(px) {
 }
 
 let pending = false;
-// ---- Text-size debug panel (localhost only; edits TEXT live and remembers it in this browser) ----
-const textDebug = ["localhost", "127.0.0.1"].includes(location.hostname) ? makeTextDebug() : null;
-function makeTextDebug() {
-  const KEY = "gzw-text-debug";
-  const saved = load(KEY, null);
-  if (saved && typeof saved === "object") {
-    if (typeof saved.perZoom === "number") TEXT_SHRINK.perZoom = saved.perZoom;
-    for (const [k, v] of Object.entries(saved.text || {}))
-      if (TEXT[k]) {
-        for (const f of ["at1x", "min"]) if (typeof v[f] === "number" && f in TEXT[k]) TEXT[k][f] = v[f];
-        if (TEXT[k].stops && Array.isArray(v.stops) && v.stops.length === TEXT[k].stops.length
-            && v.stops.every(p => typeof p[1] === "number")) TEXT[k].stops.forEach((p, i) => { p[1] = v.stops[i][1]; });
-      }
-  }
-  // A minimum above the 1x size would hide the 1x size completely, so for shrinking text keep min <= 1x.
-  for (const t of Object.values(TEXT)) if (!t.stops && t.min > t.at1x) t.min = t.at1x;
-  const persist = () => save(KEY, { perZoom: TEXT_SHRINK.perZoom,
-    text: Object.fromEntries(Object.entries(TEXT).map(([k, t]) => [k, t.stops ? { stops: t.stops } : { at1x: t.at1x, min: t.min }])) });
-  const el = document.createElement("div");
-  el.id = "textDebug"; el.className = "panel";
-  const num = (v, data) => `<input type="number" step="0.5" min="1" max="80" value="${v}" ${data}>`;
-  el.innerHTML = `<div class="hd"><b>Text sizes</b> <span class="muted">debug · localhost only</span><button title="Collapse">–</button></div>
-    <div class="body"><table><thead><tr><th>Text</th><th>1× px</th><th>Min px</th><th>Now</th></tr></thead><tbody>` +
-    Object.entries(TEXT).map(([k, t]) => t.stops
-      ? `<tr><td>${esc(t.name)}</td><td colspan="2" class="stops">` + t.stops.map(([z, v], i) =>
-           `${z}×${i === t.stops.length - 1 ? "+" : ""} ${num(v, `data-k="${k}" data-stop="${i}"`)}`).join(" ") +
-        `</td><td class="now" data-now="${k}"></td></tr>`
-      : `<tr><td>${esc(t.name)}</td>
-         <td>${num(t.at1x, `data-k="${k}" data-f="at1x"`)}</td><td>${num(t.min, `data-k="${k}" data-f="min"`)}</td>
-         <td class="now" data-now="${k}"></td></tr>`).join("") +
-    `<tr class="muted"><td>Crates, caches, tool boxes</td><td colspan="3">icon only, no text</td></tr></tbody></table>
-    <div class="row">Shrink per zoom doubling ${num(TEXT_SHRINK.perZoom, 'data-shrink step="0.25" min="0"')} px</div>
-    <div class="row"><span class="zoomNow"></span><button data-act="copy">Copy values</button><button data-act="reset">Reset</button></div></div>`;
-  document.body.appendChild(el);
-  el.addEventListener("input", e => {
-    const v = parseFloat(e.target.value);
-    if (!(v >= 0)) return;
-    if (e.target.dataset.shrink !== undefined) TEXT_SHRINK.perZoom = v;
-    else if (e.target.dataset.stop !== undefined) TEXT[e.target.dataset.k].stops[+e.target.dataset.stop][1] = v;
-    else {
-      const k = e.target.dataset.k, f = e.target.dataset.f, t = TEXT[k];
-      t[f] = v;
-      // Keep min <= 1x so every edit shows on the map: lowering 1x below min pulls min down
-      // with it, raising min above 1x pushes 1x up.
-      if (t.min > t.at1x) {
-        const other = f === "at1x" ? "min" : "at1x";
-        t[other] = v;
-        el.querySelector(`[data-k="${k}"][data-f="${other}"]`).value = v;
-      }
-    }
-    persist(); redraw();
-  });
-  el.addEventListener("click", async e => {
-    const act = e.target.dataset.act;
-    if (e.target.closest(".hd button")) { el.classList.toggle("collapsed"); return; }
-    if (act === "copy") {
-      const values = { perZoom: TEXT_SHRINK.perZoom, text: Object.fromEntries(Object.entries(TEXT).map(([k, t]) =>
-        [k, t.stops ? { stops: t.stops } : { at1x: t.at1x, min: t.min }])) };
-      try { await navigator.clipboard.writeText(JSON.stringify(values)); e.target.textContent = "Copied ✓"; } catch { e.target.textContent = "Copy failed"; }
-      setTimeout(() => { e.target.textContent = "Copy values"; }, 1200);
-    } else if (act === "reset") {
-      TEXT_SHRINK.perZoom = 2.5;
-      for (const k in TEXT) Object.assign(TEXT[k], structuredClone(TEXT_DEFAULTS[k]));
-      try { localStorage.removeItem(KEY); } catch {}
-      for (const inp of el.querySelectorAll("input[data-k]"))
-        inp.value = inp.dataset.stop !== undefined ? TEXT[inp.dataset.k].stops[+inp.dataset.stop][1] : TEXT[inp.dataset.k][inp.dataset.f];
-      el.querySelector("[data-shrink]").value = TEXT_SHRINK.perZoom;
-      redraw();
-    }
-  });
-  const place = () => { el.style.top = (document.getElementById("layers").getBoundingClientRect().bottom + 8) + "px"; };
-  addEventListener("resize", place); place();
-  return {
-    refresh() {
-      place();   // the layer bar can wrap onto two rows, so keep the panel just below it
-      for (const td of el.querySelectorAll("[data-now]")) td.textContent = textPx(td.dataset.now).toFixed(1);
-      el.querySelector(".zoomNow").textContent = `Zoom ${(viewer.viewport.getZoom(true) / viewer.viewport.getHomeZoom()).toFixed(1)}×`;
-    },
-  };
-}
-
 function redraw() { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; draw(); }); } }
 viewer.addHandler("update-viewport", redraw);
 
@@ -560,11 +545,11 @@ sizeCanvas();
 const SW = (inner) => `<svg width="14" height="14" viewBox="-7 -7 14 14">${inner}</svg>`;
 const LAYER_DEFS = [
   ["locations", "Locations", SW(`<text x="0" y="4.5" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">A</text>`)],
-  ["camps", "Campsites", SW(`<circle r="5" fill="${COLORS.trashed}" stroke="#000" stroke-width="1.5"/>`)],
+  ["camps", "Campsites", SW(`<circle r="5" fill="${COLORS.campsite}" stroke="#000" stroke-width="1.5"/>`)],
   ["crates", "Material crates", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.crate}" stroke="#000" stroke-width="1.5"/>`)],
   ["caches", "Buried caches", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.cache}" stroke="#000" stroke-width="1.5"/>`)],
   ["toolboxes", "Tool boxes", SW(`<g transform="rotate(45)" fill="none" stroke-linecap="round"><path d="M1.9-5.1A2.9 2.9 0 1 1-1.9-5.1M0-.8V6.2" stroke="#000" stroke-width="4.6"/><path d="M1.9-5.1A2.9 2.9 0 1 1-1.9-5.1M0-.8V6.2" stroke="${COLORS.toolbox}" stroke-width="2.6"/></g>`)],
-  ["lzs", "Landing zones", SW(`<path d="M0-6 6 0 0 6-6 0Z" fill="${COLORS.lz}" stroke="#000" stroke-width="1.5"/>`)],
+  ["lzs", "Landing zones", LZ_SVG],
   ["cops", "COPs", SW(`<path d="M0-6 6 5-6 5Z" fill="${COLORS.cop}" stroke="#000" stroke-width="1.5"/>`)],
   ["bases", "Bases", SW(`<rect x="-5" y="-5" width="10" height="10" fill="${COLORS.base}" stroke="#000" stroke-width="1.5"/>`)],
   ["route", `Loot route <span class="prealpha">PRE-<br>ALPHA</span>`, SW(`<path d="M-6 4 -1-2 2 2 6-5" fill="none" stroke="${RUN_COLORS[0]}" stroke-width="2.5"/>`)],
@@ -576,6 +561,16 @@ for (const [key, name, svg] of LAYER_DEFS) {
   b.onclick = () => { layers[key] = !layers[key]; b.classList.toggle("on", layers[key]); save("gzw-layers", layers); updateRuns(); redraw(); };
   layerBar.appendChild(b);
 }
+// Faction picker, next to the Bases button.
+const factionBox = document.createElement("label");
+factionBox.id = "factionBox"; factionBox.title = "Your faction: its landing zones are shown normally, the others are dimmed";
+factionBox.textContent = "Faction ";
+const factionPick = document.createElement("select");
+for (const [k, f] of Object.entries(FACTIONS)) factionPick.add(new Option(f.name, k));
+factionPick.value = faction;
+factionPick.onchange = () => { faction = factionPick.value; save("gzw-faction", faction); updateRuns(); redraw(); };
+factionBox.appendChild(factionPick);
+layerBar.insertBefore(factionBox, layerBar.querySelector("[data-layer=route]"));
 const pick = document.createElement("select");
 pick.id = "routePick";
 for (const [m, r] of Object.entries(G.routes)) pick.add(new Option(`${r.name} (${r.summary.stops} stops, ${(r.summary.walk_m / 1000).toFixed(1)} km)`, m));
@@ -609,7 +604,8 @@ function updateRuns() {
   box.innerHTML = `<div><b>${esc(R().name)}</b>&nbsp;· ${esc(sm.stops)} stops · ${(sm.walk_m / 1000).toFixed(1)} km on foot</div>` +
     Object.entries(runs).map(([n, r]) =>
     `<div><i style="background:${RUN_COLORS[(n - 1) % RUN_COLORS.length]}"></i>Run ${n}: stops ${r.a}–${r.b}</div>`).join("") +
-    `<div><i style="background:${COLORS.heli}"></i>Helicopter hop</div>`;
+    `<div><i style="background:${COLORS.heli}"></i>Helicopter hop</div>` +
+    (faction === "LRI" ? "" : `<div class="muted">Routes are planned with LRI landing zones</div>`);
   box.style.display = "block";
   placeRuns();
 }

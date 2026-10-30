@@ -19,6 +19,7 @@ An unofficial, fan-made zoomable map of Lamang for **Gray Zone Warfare** patch 0
 
 | What | Source |
 |---|---|
+| Faction logos | © MADFINGER Games, via the [Gray Zone Warfare Wiki](https://gray-zone-warfare.fandom.com/wiki/Factions) (scaled down). |
 | Gray Zone Warfare, the Lamang map and all game content | © [MADFINGER Games](https://madfingergames.com/). Gray Zone Warfare and related names are trademarks of their owner. |
 | Map imagery (0.5 tiles) and marker positions: locations, campsites, building material crates, buried caches, landing zones, COPs, bases | [GZW Tac Map](https://gzwtacmap.com/) and its contributors |
 | Zoomable image viewer | [OpenSeadragon](https://openseadragon.github.io/) 4.1.0 (BSD 3-Clause licence), loaded from [cdnjs](https://cdnjs.com/) |
