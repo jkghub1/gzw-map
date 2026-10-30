@@ -5,9 +5,35 @@ const RES = (2 * 20037508.342789244 / 2 ** 17) / 256;
 const G = window.GZW;
 
 // ---- Style ----
-const LOC_PX = 20;                  // location names (e.g. NORTHERN REACH); marker labels start at this size
-const MIN_PX = 11;                  // marker labels shrink to this as you zoom in
-const SHRINK_PER_ZOOM = 2.5;        // px smaller per doubling of zoom
+// Every kind of map text: its size at 1x zoom (the full-map view) and the smallest it may get (J's minimums).
+// Each kind shrinks by TEXT_SHRINK.perZoom px per doubling of zoom until it reaches its minimum.
+// Danger-zone text is different (J): it follows a table of px sizes by zoom (1x, 2x, 3x, 4x+), straight lines in between,
+// and stays at the last size when zooming in further.
+// On localhost a debug panel edits these live.
+const TEXT_SHRINK = { perZoom: 2.5 };
+const TEXT_DEFAULTS = {   // J's chosen sizes (debug panel, 2026-10-30)
+  region:   { name: "Region names",    at1x: 16,   min: 15 },
+  base:     { name: "Bases",           at1x: 15,   min: 14.5 },
+  cop:      { name: "COPs",            at1x: 13,   min: 13 },
+  camp1:    { name: "Camp 1st line",   at1x: 13,   min: 13 },
+  camp2:    { name: "Camp 2nd line",   at1x: 12,   min: 12 },
+  lz:       { name: "Landing zones",   at1x: 13,   min: 13 },
+  route:    { name: "Route notes",     at1x: 20,   min: 11 },
+  distance: { name: "Route distances", at1x: 17,   min: 9.4 },
+  zone:     { name: "Danger zones",    stops: [[1, 6], [2, 7], [3, 9], [4, 10]] },
+};
+const TEXT = structuredClone(TEXT_DEFAULTS);
+function textPx(kind) {
+  const t = TEXT[kind];
+  if (t.stops) {
+    const z = 2 ** view.k, s = t.stops;
+    if (z <= s[0][0]) return s[0][1];
+    for (let i = 1; i < s.length; i++)
+      if (z <= s[i][0]) return s[i - 1][1] + (s[i][1] - s[i - 1][1]) * (z - s[i - 1][0]) / (s[i][0] - s[i - 1][0]);
+    return s[s.length - 1][1];
+  }
+  return Math.max(t.min, t.at1x - TEXT_SHRINK.perZoom * view.k);
+}
 const COLORS = {
   trashed: "#ff4d2e", campsite: "#00c8ff", remote: "#be78ff", crate: "#3884ff", cache: "#a64dff", lz: "#ffdd00",
   cop: "#f5f5f5", base: "#2ecc71", heli: "#ff3d00", toolbox: "#ff9f1a",
@@ -77,12 +103,20 @@ function free(r) {
 }
 function onScreen(x, y, pad = 60) { return x > -pad && y > -pad && x < innerWidth + pad && y < innerHeight + pad; }
 
+const MAX_LINE_M = 0;   // 1 km line cap: off for now (J, 2026-10-30); set to 1000 to bring it back
 function textBox(lines, x, y, anchor) {
   // lines: [{ parts: [[text, color]], px, bold }]; returns box for the block positioned at x,y.
+  // If any line would be wider than MAX_LINE_M at this zoom, the whole block shrinks (line sizes keep their ratio).
+  const measure = L => {
+    ctx.font = `${L.bold ? 700 : 400} ${L.px}px "Segoe UI", sans-serif`;
+    return L.parts.reduce((s, [t]) => s + ctx.measureText(t).width, 0);
+  };
+  lines = lines.map(L => ({ ...L }));
+  const maxW = MAX_LINE_M / RES * view.s, widest = Math.max(...lines.map(measure));
+  if (MAX_LINE_M && widest > maxW) for (const L of lines) L.px *= maxW / widest;
   let w = 0, h = 0;
   for (const L of lines) {
-    ctx.font = `${L.bold ? 700 : 400} ${L.px}px "Segoe UI", sans-serif`;
-    L.width = L.parts.reduce((s, [t]) => s + ctx.measureText(t).width, 0);
+    L.width = measure(L);
     w = Math.max(w, L.width); h += L.px * 1.2;
   }
   const bx = anchor === "center" ? x - w / 2 : x;
@@ -282,8 +316,7 @@ function zoneMidX(pts, x, y) {
 }
 // Zone labels sit at the area's centroid height, centred across the zone's width there (or just above
 // the zone when labelPos is "above"), and always draw (placed before every other label).
-// They scale with the map: the widest line is always labelWidth metres wide (2 grids by default),
-// the other lines keep the same size. Hidden when that would be under 3 px (too small to read).
+// Their size comes from TEXT.zone, like every other label.
 function drawZoneLabels() {
   for (const z of G.zones || []) {
     let a = 0, cx = 0, cy = 0;
@@ -295,9 +328,7 @@ function drawZoneLabels() {
     if (!onScreen(x0, y, 200)) continue;
     const pts = zoneOutline(z).map(([X, Y]) => toScreen(X, Y));
     const lines = size => z.label.map(t => ({ parts: [[t, "#fff"]], px: size, bold: true }));
-    const widest = Math.max(...textBox(lines(100), x0, y, "center").lines.map(L => L.width));   // at 100 px
-    const size = 100 * (z.labelWidth / RES * view.s) / widest;
-    if (size < 3) continue;
+    const size = textPx("zone");
     let box;
     if (z.labelPos === "above") {   // small zones: text block sits just above the top edge
       const top = Math.min(...pts.map(p => p[1])), h = textBox(lines(size), x0, 0, "center").h;
@@ -314,7 +345,6 @@ function draw() {
   if (!computeView()) return;
   ctx.clearRect(0, 0, innerWidth, innerHeight);
   placed = []; hits = [];
-  const px = Math.max(MIN_PX, LOC_PX - SHRINK_PER_ZOOM * view.k);   // marker label size for this zoom
   const r = Math.min(9, 6 + view.k * 0.6);                            // icon radius grows slightly
   const vis = [];
   const campIcons = [];   // drawn last, on top of all text
@@ -365,13 +395,13 @@ function draw() {
     vis.push(["camp", c, x, y]);
   }
 
-  if (layers.route) drawRouteMarks(px);
+  if (layers.route) drawRouteMarks(textPx("route"));
 
   // Labels, highest priority first.
   drawZoneLabels();
   if (layers.locations) for (const L of G.locations) {
     const [x, y] = toScreen(L.X, L.Y); if (!onScreen(x, y, 200)) continue;
-    label([{ parts: [[L.name.toUpperCase(), "#fff"]], px: LOC_PX, bold: true }], x, y, "center");
+    label([{ parts: [[L.name.toUpperCase(), "#fff"]], px: textPx("region"), bold: true }], x, y, "center");
   }
   const order = { base: 0, camp: 1, cop: 2, lz: 3 };
   vis.sort((a, b) => order[a[0]] - order[b[0]]);
@@ -379,18 +409,19 @@ function draw() {
     const lx = x + r + 6;
     if (kind === "camp") {
       const st = campStatus(o);
-      const line1 = { parts: [[o.letter + " ", "#fff"], [`(${st})`, COLORS[st]]], px, bold: true };
-      const line2 = { parts: [[`${o.type} ${o.grid}`, CAMP_TEXT[o.type]]], px: px * 0.92, bold: false };
+      const line1 = { parts: [[o.letter + " ", "#fff"], [`(${st})`, COLORS[st]]], px: textPx("camp1"), bold: true };
+      const line2 = { parts: [[`${o.type} ${o.grid}`, CAMP_TEXT[o.type]]], px: textPx("camp2"), bold: false };
       label([line1, line2], lx, y, "left", [line1]);
     } else if (kind === "base") {
-      label([{ parts: [[o.name, "#aaffc8"]], px, bold: true }], lx, y);
+      label([{ parts: [[o.name, "#aaffc8"]], px: textPx("base"), bold: true }], lx, y);
     } else if (kind === "cop") {
-      label([{ parts: [["COP " + o.name, "#f5f5f5"]], px: px * 0.92, bold: false }], lx, y);
+      label([{ parts: [["COP " + o.name, "#f5f5f5"]], px: textPx("cop"), bold: false }], lx, y);
     } else {
-      label([{ parts: [["LZ " + o.name, "#ffec8c"]], px: px * 0.92, bold: false }], lx, y);
+      label([{ parts: [["LZ " + o.name, "#ffec8c"]], px: textPx("lz"), bold: false }], lx, y);
     }
   }
-  if (layers.route) drawDistances(px * 0.85);
+  if (layers.route) drawDistances(textPx("distance"));
+  if (textDebug) textDebug.refresh();
   for (const [x, y, c, st] of campIcons) {
     icon.circle(x, y, r, campColor(c.type));
     if (st !== "unknown") { ctx.lineWidth = 2.5; ctx.strokeStyle = COLORS[st]; ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, Math.PI * 2); ctx.stroke(); }
@@ -430,8 +461,97 @@ function drawDistances(px) {
 }
 
 let pending = false;
+// ---- Text-size debug panel (localhost only; edits TEXT live and remembers it in this browser) ----
+const textDebug = ["localhost", "127.0.0.1"].includes(location.hostname) ? makeTextDebug() : null;
+function makeTextDebug() {
+  const KEY = "gzw-text-debug";
+  const saved = load(KEY, null);
+  if (saved && typeof saved === "object") {
+    if (typeof saved.perZoom === "number") TEXT_SHRINK.perZoom = saved.perZoom;
+    for (const [k, v] of Object.entries(saved.text || {}))
+      if (TEXT[k]) {
+        for (const f of ["at1x", "min"]) if (typeof v[f] === "number" && f in TEXT[k]) TEXT[k][f] = v[f];
+        if (TEXT[k].stops && Array.isArray(v.stops) && v.stops.length === TEXT[k].stops.length
+            && v.stops.every(p => typeof p[1] === "number")) TEXT[k].stops.forEach((p, i) => { p[1] = v.stops[i][1]; });
+      }
+  }
+  // A minimum above the 1x size would hide the 1x size completely, so for shrinking text keep min <= 1x.
+  for (const t of Object.values(TEXT)) if (!t.stops && t.min > t.at1x) t.min = t.at1x;
+  const persist = () => save(KEY, { perZoom: TEXT_SHRINK.perZoom,
+    text: Object.fromEntries(Object.entries(TEXT).map(([k, t]) => [k, t.stops ? { stops: t.stops } : { at1x: t.at1x, min: t.min }])) });
+  const el = document.createElement("div");
+  el.id = "textDebug"; el.className = "panel";
+  const num = (v, data) => `<input type="number" step="0.5" min="1" max="80" value="${v}" ${data}>`;
+  el.innerHTML = `<div class="hd"><b>Text sizes</b> <span class="muted">debug · localhost only</span><button title="Collapse">–</button></div>
+    <div class="body"><table><thead><tr><th>Text</th><th>1× px</th><th>Min px</th><th>Now</th></tr></thead><tbody>` +
+    Object.entries(TEXT).map(([k, t]) => t.stops
+      ? `<tr><td>${esc(t.name)}</td><td colspan="2" class="stops">` + t.stops.map(([z, v], i) =>
+           `${z}×${i === t.stops.length - 1 ? "+" : ""} ${num(v, `data-k="${k}" data-stop="${i}"`)}`).join(" ") +
+        `</td><td class="now" data-now="${k}"></td></tr>`
+      : `<tr><td>${esc(t.name)}</td>
+         <td>${num(t.at1x, `data-k="${k}" data-f="at1x"`)}</td><td>${num(t.min, `data-k="${k}" data-f="min"`)}</td>
+         <td class="now" data-now="${k}"></td></tr>`).join("") +
+    `<tr class="muted"><td>Crates, caches, tool boxes</td><td colspan="3">icon only, no text</td></tr></tbody></table>
+    <div class="row">Shrink per zoom doubling ${num(TEXT_SHRINK.perZoom, 'data-shrink step="0.25" min="0"')} px</div>
+    <div class="row"><span class="zoomNow"></span><button data-act="copy">Copy values</button><button data-act="reset">Reset</button></div></div>`;
+  document.body.appendChild(el);
+  el.addEventListener("input", e => {
+    const v = parseFloat(e.target.value);
+    if (!(v >= 0)) return;
+    if (e.target.dataset.shrink !== undefined) TEXT_SHRINK.perZoom = v;
+    else if (e.target.dataset.stop !== undefined) TEXT[e.target.dataset.k].stops[+e.target.dataset.stop][1] = v;
+    else {
+      const k = e.target.dataset.k, f = e.target.dataset.f, t = TEXT[k];
+      t[f] = v;
+      // Keep min <= 1x so every edit shows on the map: lowering 1x below min pulls min down
+      // with it, raising min above 1x pushes 1x up.
+      if (t.min > t.at1x) {
+        const other = f === "at1x" ? "min" : "at1x";
+        t[other] = v;
+        el.querySelector(`[data-k="${k}"][data-f="${other}"]`).value = v;
+      }
+    }
+    persist(); redraw();
+  });
+  el.addEventListener("click", async e => {
+    const act = e.target.dataset.act;
+    if (e.target.closest(".hd button")) { el.classList.toggle("collapsed"); return; }
+    if (act === "copy") {
+      const values = { perZoom: TEXT_SHRINK.perZoom, text: Object.fromEntries(Object.entries(TEXT).map(([k, t]) =>
+        [k, t.stops ? { stops: t.stops } : { at1x: t.at1x, min: t.min }])) };
+      try { await navigator.clipboard.writeText(JSON.stringify(values)); e.target.textContent = "Copied ✓"; } catch { e.target.textContent = "Copy failed"; }
+      setTimeout(() => { e.target.textContent = "Copy values"; }, 1200);
+    } else if (act === "reset") {
+      TEXT_SHRINK.perZoom = 2.5;
+      for (const k in TEXT) Object.assign(TEXT[k], structuredClone(TEXT_DEFAULTS[k]));
+      try { localStorage.removeItem(KEY); } catch {}
+      for (const inp of el.querySelectorAll("input[data-k]"))
+        inp.value = inp.dataset.stop !== undefined ? TEXT[inp.dataset.k].stops[+inp.dataset.stop][1] : TEXT[inp.dataset.k][inp.dataset.f];
+      el.querySelector("[data-shrink]").value = TEXT_SHRINK.perZoom;
+      redraw();
+    }
+  });
+  const place = () => { el.style.top = (document.getElementById("layers").getBoundingClientRect().bottom + 8) + "px"; };
+  addEventListener("resize", place); place();
+  return {
+    refresh() {
+      place();   // the layer bar can wrap onto two rows, so keep the panel just below it
+      for (const td of el.querySelectorAll("[data-now]")) td.textContent = textPx(td.dataset.now).toFixed(1);
+      el.querySelector(".zoomNow").textContent = `Zoom ${(viewer.viewport.getZoom(true) / viewer.viewport.getHomeZoom()).toFixed(1)}×`;
+    },
+  };
+}
+
 function redraw() { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; draw(); }); } }
 viewer.addHandler("update-viewport", redraw);
+
+// Zoom readout in the mini-map's empty bottom band (inside the navigator, so it fades with it).
+const zoomTag = document.createElement("div");
+zoomTag.id = "zoomTag";
+viewer.navigator.element.appendChild(zoomTag);
+const showZoom = () => { zoomTag.textContent = `Zoom ${(viewer.viewport.getZoom(true) / viewer.viewport.getHomeZoom()).toFixed(1)}×`; };
+viewer.addHandler("update-viewport", showZoom);
+viewer.addHandler("open", showZoom);
 viewer.addHandler("open", redraw);
 addEventListener("resize", () => { sizeCanvas(); placeRuns(); redraw(); });
 sizeCanvas();
@@ -555,4 +675,4 @@ document.addEventListener("pointerdown", e => { if (e.button === 0) document.doc
 for (const ev of ["pointerup", "pointercancel"]) document.addEventListener(ev, e => { if (e.button === 0 || e.buttons === 0) lmbUp(); }, true);
 addEventListener("blur", lmbUp);
 
-document.addEventListener("keydown", e => { if (e.key === "Escape") { hideCtx(); showAbout(false); } if (e.key === "0") viewer.viewport.goHome(); });
+document.addEventListener("keydown", e => { if (e.target.closest("input, select, textarea")) return; if (e.key === "Escape") { hideCtx(); showAbout(false); } if (e.key === "0") viewer.viewport.goHome(); });
