@@ -230,6 +230,72 @@ function drawGrid() {
   ctx.restore();
 }
 
+// Danger zones: a smooth closed curve (Catmull-Rom through J's points) filled with translucent colour.
+// The curve is sampled once into a polyline in map metres; drawing and label fitting both use it.
+function zoneOutline(z) {
+  if (z.outline) return z.outline;
+  const p = z.points, n = p.length, out = [];
+  for (let i = 0; i < n; i++) {
+    const p0 = p[(i - 1 + n) % n], p1 = p[i], p2 = p[(i + 1) % n], p3 = p[(i + 2) % n];
+    for (let k = 0; k < 16; k++) {
+      const t = k / 16, t2 = t * t, t3 = t2 * t;
+      out.push([0, 1].map(d => 0.5 * (2 * p1[d] + (p2[d] - p0[d]) * t + (2 * p0[d] - 5 * p1[d] + 4 * p2[d] - p3[d]) * t2
+                                      + (3 * p1[d] - p0[d] - 3 * p2[d] + p3[d]) * t3)));
+    }
+  }
+  return (z.outline = out);
+}
+function drawZones() {
+  for (const z of G.zones || []) {
+    ctx.beginPath();
+    zoneOutline(z).forEach(([X, Y], i) => { const [x, y] = toScreen(X, Y); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.closePath();
+    ctx.save();
+    ctx.globalAlpha = 0.2; ctx.fillStyle = z.color; ctx.fill();
+    ctx.globalAlpha = 0.55; ctx.strokeStyle = z.color; ctx.lineWidth = 2.5; ctx.lineJoin = "round"; ctx.stroke();
+    ctx.restore();
+  }
+}
+// Middle of the zone along the horizontal line y (screen px), for the stretch that contains x; x if none.
+function zoneMidX(pts, x, y) {
+  const xs = [];
+  pts.forEach(([x1, y1], i) => {
+    const [x2, y2] = pts[(i + 1) % pts.length];
+    if ((y1 <= y) !== (y2 <= y)) xs.push(x1 + (y - y1) * (x2 - x1) / (y2 - y1));
+  });
+  xs.sort((a, b) => a - b);
+  for (let i = 0; i + 1 < xs.length; i += 2) if (xs[i] <= x && x <= xs[i + 1]) return (xs[i] + xs[i + 1]) / 2;
+  return x;
+}
+// Zone labels sit at the area's centroid height, centred across the zone's width there (or just above
+// the zone when labelPos is "above"), and always draw (placed before every other label).
+// They scale with the map: the widest line is always labelWidth metres wide (2 grids by default),
+// the other lines keep the same size. Hidden when that would be under 3 px (too small to read).
+function drawZoneLabels() {
+  for (const z of G.zones || []) {
+    let a = 0, cx = 0, cy = 0;
+    z.points.forEach(([x1, y1], i) => {
+      const [x2, y2] = z.points[(i + 1) % z.points.length], f = x1 * y2 - x2 * y1;
+      a += f; cx += (x1 + x2) * f; cy += (y1 + y2) * f;
+    });
+    const [x0, y] = toScreen(cx / (3 * a), cy / (3 * a));
+    if (!onScreen(x0, y, 200)) continue;
+    const pts = zoneOutline(z).map(([X, Y]) => toScreen(X, Y));
+    const lines = size => z.label.map(t => ({ parts: [[t, "#fff"]], px: size, bold: true }));
+    const widest = Math.max(...textBox(lines(100), x0, y, "center").lines.map(L => L.width));   // at 100 px
+    const size = 100 * (z.labelWidth / RES * view.s) / widest;
+    if (size < 3) continue;
+    let box;
+    if (z.labelPos === "above") {   // small zones: text block sits just above the top edge
+      const top = Math.min(...pts.map(p => p[1])), h = textBox(lines(size), x0, 0, "center").h;
+      box = textBox(lines(size), x0, top - 4 - h / 2, "center");
+    } else {
+      box = textBox(lines(size), zoneMidX(pts, x0, y), y, "center");
+    }
+    placed.push(box); drawText(box, true);
+  }
+}
+
 // ---- Main draw ----
 function draw() {
   if (!computeView()) return;
@@ -241,6 +307,7 @@ function draw() {
   const campIcons = [];   // drawn last, on top of all text
 
   drawGrid();
+  drawZones();
   if (layers.route) drawRouteLines();
 
   // Icons first (always drawn), labels afterwards in priority order.
@@ -283,6 +350,7 @@ function draw() {
   if (layers.route) drawRouteMarks(px);
 
   // Labels, highest priority first.
+  drawZoneLabels();
   if (layers.locations) for (const L of G.locations) {
     const [x, y] = toScreen(L.X, L.Y); if (!onScreen(x, y, 200)) continue;
     label([{ parts: [[L.name.toUpperCase(), "#fff"]], px: LOC_PX, bold: true }], x, y, "center");
