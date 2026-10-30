@@ -10,7 +10,7 @@ const MIN_PX = 11;                  // marker labels shrink to this as you zoom 
 const SHRINK_PER_ZOOM = 2.5;        // px smaller per doubling of zoom
 const COLORS = {
   trashed: "#ff4d2e", campsite: "#00c8ff", remote: "#be78ff", crate: "#3884ff", cache: "#a64dff", lz: "#ffdd00",
-  cop: "#f5f5f5", base: "#2ecc71", heli: "#ff3d00",
+  cop: "#f5f5f5", base: "#2ecc71", heli: "#ff3d00", toolbox: "#ff9f1a",
   good: "#5ae678", bad: "#ff5a5a", unknown: "#bec4cc",
 };
 const CAMP_TEXT = { "Trashed Campsite": "#ffbeaf", "Campsite": "#a0e8ff", "Remote Campsite": "#dcbeff" };
@@ -23,7 +23,7 @@ function load(key, fallback) { try { return JSON.parse(localStorage.getItem(key)
 function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
 // Statuses are read-only and come from campsite_status.json (via data.js); clear any old click overrides.
 try { localStorage.removeItem("gzw-camp-status"); } catch {}
-const layers = { locations: true, camps: true, crates: true, caches: true, lzs: true, cops: true, bases: true, route: false };
+const layers = { locations: true, camps: true, crates: true, caches: true, toolboxes: false, lzs: true, cops: true, bases: true, route: false };
 const savedLayers = load("gzw-layers", {});
 for (const k of Object.keys(layers)) if (typeof savedLayers?.[k] === "boolean") layers[k] = savedLayers[k];
 const campStatus = c => c.status || "unknown";
@@ -120,7 +120,20 @@ function outlined(path, fill, edge = 2.5) {
   ctx.lineWidth = edge * 2; ctx.strokeStyle = "#000"; path(); ctx.stroke();
   ctx.fillStyle = fill; path(); ctx.fill();
 }
+// Open-ended spanner, drawn as strokes in a unit frame rotated 45 degrees (size s = about the icon's radius).
+function spannerPath(s) {
+  ctx.beginPath();
+  ctx.arc(0, -0.42 * s, 0.34 * s, -Math.PI / 2 + 0.75, -Math.PI / 2 - 0.75 + 2 * Math.PI);
+  ctx.moveTo(0, -0.1 * s); ctx.lineTo(0, 0.82 * s);
+}
 const icon = {
+  spanner: (x, y, r, color) => {
+    const s = r * 1.25;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4); ctx.lineCap = "round";
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 0.34 * s + 2.4; spannerPath(s); ctx.stroke();
+    ctx.strokeStyle = color; ctx.lineWidth = 0.34 * s; spannerPath(s); ctx.stroke();
+    ctx.restore();
+  },
   circle: (x, y, r, fill) => outlined(() => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); }, fill, 1.5),
   square: (x, y, r, fill) => outlined(() => { ctx.beginPath(); ctx.rect(x - r, y - r, 2 * r, 2 * r); }, fill, 1.5),
   diamond: (x, y, r, fill) => outlined(() => { ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath(); }, fill),
@@ -321,6 +334,11 @@ function draw() {
     icon.square(x, y, r * 0.75, COLORS.cache);
     hits.push({ x, y, r: r + 4, tip: `<b>Buried Cache</b> · tier ${esc(c.tier)}<br><span class="muted">${esc(c.grid)} · ${esc(c.area)}</span>` });
   }
+  if (layers.toolboxes) for (const t of G.toolboxes) {
+    const [x, y] = toScreen(t.X, t.Y); if (!onScreen(x, y)) continue;
+    icon.spanner(x, y, r * 0.85, COLORS.toolbox);
+    hits.push({ x, y, r: r + 4, tip: `<b>Tool Box</b><br><span class="muted">${esc(t.grid)} · ${esc(t.area)}</span>` });
+  }
   if (layers.lzs) for (const l of G.lzs) {
     const [x, y] = toScreen(l.X, l.Y); if (!onScreen(x, y)) continue;
     icon.diamond(x, y, r + 1, l.lri ? COLORS.lz : "#9a8a3a");
@@ -425,6 +443,7 @@ const LAYER_DEFS = [
   ["camps", "Campsites", SW(`<circle r="5" fill="${COLORS.trashed}" stroke="#000" stroke-width="1.5"/>`)],
   ["crates", "Material crates", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.crate}" stroke="#000" stroke-width="1.5"/>`)],
   ["caches", "Buried caches", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.cache}" stroke="#000" stroke-width="1.5"/>`)],
+  ["toolboxes", "Tool boxes", SW(`<g transform="rotate(45)" fill="none" stroke-linecap="round"><path d="M1.9-5.1A2.9 2.9 0 1 1-1.9-5.1M0-.8V6.2" stroke="#000" stroke-width="4.6"/><path d="M1.9-5.1A2.9 2.9 0 1 1-1.9-5.1M0-.8V6.2" stroke="${COLORS.toolbox}" stroke-width="2.6"/></g>`)],
   ["lzs", "Landing zones", SW(`<path d="M0-6 6 0 0 6-6 0Z" fill="${COLORS.lz}" stroke="#000" stroke-width="1.5"/>`)],
   ["cops", "COPs", SW(`<path d="M0-6 6 5-6 5Z" fill="${COLORS.cop}" stroke="#000" stroke-width="1.5"/>`)],
   ["bases", "Bases", SW(`<rect x="-5" y="-5" width="10" height="10" fill="${COLORS.base}" stroke="#000" stroke-width="1.5"/>`)],
