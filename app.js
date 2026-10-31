@@ -13,10 +13,10 @@ const TEXT_SHRINK = { perZoom: 2.5 };
 const TEXT = {   // J's chosen sizes (2026-10-30)
   region:   { name: "Region names",    at1x: 16,   min: 15 },
   base:     { name: "Bases",           at1x: 15,   min: 14.5 },
-  cop:      { name: "COPs",            at1x: 13,   min: 13 },
+  cop:      { name: "COPs",            at1x: 12,   min: 12 },
   camp1:    { name: "Camp 1st line",   at1x: 13,   min: 13 },
   camp2:    { name: "Camp 2nd line",   at1x: 12,   min: 12 },
-  lz:       { name: "Landing zones",   at1x: 13,   min: 13 },
+  lz:       { name: "Landing zones",   at1x: 12,   min: 12 },
   route:    { name: "Route notes",     at1x: 20,   min: 11 },
   distance: { name: "Route distances", at1x: 17,   min: 9.4 },
   zone:     { name: "Danger zones",    stops: [[1, 6], [2, 7], [3, 9], [4, 10]] },
@@ -63,6 +63,7 @@ const campStatus = c => c.status || "unknown";
 // The faction you play: its LZs and the shared ones are normal, the other factions' LZs are dimmed.
 const savedFaction = load("gzw-faction", "LRI");
 let faction = Object.hasOwn(FACTIONS, savedFaction) ? savedFaction : "LRI";
+const BASE_LOGO = r => 2 * (r + 3);   // half-size of a base logo: twice the old base square (J)
 const lzOpen = l => !l.faction || l.faction === faction;
 const savedRoute = load("gzw-route", "all");
 let routeMode = Object.hasOwn(G.routes, savedRoute) ? savedRoute : "all";
@@ -444,8 +445,8 @@ function draw() {
   }
   if (layers.bases) for (const b of G.bases) {
     const [x, y] = toScreen(b.X, b.Y); if (!onScreen(x, y)) continue;
-    icon.logo(x, y, r + 3, FACTIONS[b.faction]);
-    hits.push({ x, y, r: r + 6, tip: `<b>${esc(FACTIONS[b.faction].name)}</b> · Operation Base<br><span class="muted">${esc(b.grid)}</span>` });
+    icon.logo(x, y, BASE_LOGO(r), FACTIONS[b.faction]);
+    hits.push({ x, y, r: BASE_LOGO(r) + 3, tip: `<b>${esc(FACTIONS[b.faction].name)}</b> · Operation Base<br><span class="muted">${esc(b.grid)}</span>` });
     vis.push(["base", b, x, y]);
   }
   if (layers.camps) for (const c of G.camps) {
@@ -478,13 +479,13 @@ function draw() {
       const more = rest.map((t, i) => ({ parts: [[i === rest.length - 1 ? `${t} ${o.grid}` : t, CAMP_TEXT[o.type]]], px: textPx("camp2"), bold: false }));
       label([line1, ...more], lx, y, "left", [line1]);
     } else if (kind === "base") {
-      const f = FACTIONS[o.faction], gap = r + 3 + 3;   // name sits above or below the logo (J)
+      const f = FACTIONS[o.faction], gap = BASE_LOGO(r) + 3;   // name sits above or below the logo (J)
       label(f.name.split(" ").map(w => ({ parts: [[w, "#aaffc8"]], px: textPx("base"), bold: true })),
             x, f.labelPos === "below" ? y + gap : y - gap, f.labelPos);
     } else if (kind === "cop") {
-      label([{ parts: [["COP " + o.name, "#f5f5f5"]], px: textPx("cop"), bold: false }], lx, y);
+      label([{ parts: [[o.name.toUpperCase(), "#f5f5f5"]], px: textPx("cop"), bold: true }], lx, y);   // the icon already says COP
     } else {
-      label([{ parts: [[o.name, COLORS.lz]], px: textPx("lz"), bold: false }], lx, y);   // the icon already says LZ
+      label([{ parts: [[o.name.toUpperCase(), COLORS.lz]], px: textPx("lz"), bold: true }], lx, y);   // the icon already says LZ
     }
   }
   if (layers.route) drawDistances(textPx("distance"));
