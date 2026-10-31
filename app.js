@@ -33,7 +33,7 @@ function textPx(kind) {
   return Math.max(t.min, t.at1x - TEXT_SHRINK.perZoom * view.k);
 }
 const COLORS = {
-  trashed: "#ff4d2e", campsite: "#00c8ff", remote: "#be78ff", crate: "#3884ff", cache: "#a64dff", lz: "#fdf535", lzOther: "#9a8a3a",
+  trashed: "#ff4d2e", campsite: "#00c8ff", remote: "#be78ff", crate: "#3884ff", cache: "#a64dff", lz: "#fdf535", lzOther: "#9a8a3a", star: "#ff2dbe", cacheNotFound: "#6b5a7d",
   cop: "#f5f5f5", base: "#2ecc71", heli: "#ff3d00", toolbox: "#ff9f1a",
   good: "#5ae678", "good?": "#ffb000", bad: "#ff5a5a", unknown: "#bec4cc",
 };
@@ -226,6 +226,17 @@ function lzSprite(fill) {
   return c;
 }
 const LZ_SPRITE = { open: lzSprite(COLORS.lz), other: lzSprite(COLORS.lzOther) };
+// Pink star (J's option B at 60%): pink glow, black outline.
+function starPath(x, y, R, r = R * 0.45) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, d = i % 2 ? r : R; ctx.lineTo(x + d * Math.cos(a), y + d * Math.sin(a)); }
+  ctx.closePath();
+}
+icon.star = (x, y) => {
+  const R = 11 * 0.6;
+  ctx.save(); ctx.shadowColor = COLORS.star; ctx.shadowBlur = 6; starPath(x, y, R); ctx.fillStyle = COLORS.star; ctx.fill(); ctx.restore();
+  starPath(x, y, R); ctx.lineJoin = "round"; ctx.lineWidth = 1.5; ctx.strokeStyle = "#000"; ctx.stroke(); ctx.fillStyle = COLORS.star; ctx.fill();
+};
 icon.lz = (x, y, r, open) => {
   const s = LZ_N;
   ctx.imageSmoothingEnabled = false;
@@ -423,8 +434,10 @@ function draw() {
   }
   if (layers.caches) for (const c of G.caches) {
     const [x, y] = toScreen(c.X, c.Y); if (!onScreen(x, y)) continue;
-    icon.square(x, y, r * 0.75, COLORS.cache);
-    hits.push({ x, y, r: r + 4, tip: `<b>Buried Cache</b> · tier ${esc(c.tier)}<br><span class="muted">${esc(c.grid)} · ${esc(c.area)}</span>` });
+    icon.square(x, y, r * 0.75, c.status === "not found" ? COLORS.cacheNotFound : COLORS.cache);
+    hits.push({ x, y, r: r + 4, tip: `<b>Buried Cache</b> · tier ${esc(c.tier)}` +
+      (c.tip ? `<br>${esc(c.tip)}` : c.status ? ` <span class="muted">(${esc(c.status)})</span>` : "") +
+      `<br><span class="muted">${esc(c.grid)} · ${esc(c.area)}</span>` });
   }
   if (layers.toolboxes) for (const t of G.toolboxes) {
     const [x, y] = toScreen(t.X, t.Y); if (!onScreen(x, y)) continue;
@@ -492,6 +505,22 @@ function draw() {
   for (const [x, y, c, st] of campIcons) {
     icon.circle(x, y, r, campColor(c.type));
     if (st !== "unknown") { ctx.lineWidth = 2.5; ctx.strokeStyle = COLORS[st]; ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, Math.PI * 2); ctx.stroke(); }
+  }
+  // J's pink lines (same pink as the stars), always shown. 1 px at every zoom, like the 100 m grid lines (J).
+  for (const ln of G.lines || []) {
+    const pts = ln.points.map(([X, Y]) => toScreen(X, Y));
+    ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+    ctx.lineCap = ctx.lineJoin = "round";
+    ctx.lineWidth = 1; ctx.strokeStyle = COLORS.star; ctx.stroke();
+    const tip = `<b style="color:${COLORS.star}">${esc(ln.tip || "Marked line")}</b><br><span class="muted">${esc(ln.grid)}</span>`;
+    for (let i = 1; i < pts.length; i++) hits.push({ x: pts[i][0], y: pts[i][1], seg: [...pts[i - 1], ...pts[i]], r: 6, tip });
+  }
+  // J's pink stars, always shown, on top of everything.
+  for (const s of G.stars || []) {
+    const [x, y] = toScreen(s.X, s.Y); if (!onScreen(x, y)) continue;
+    icon.star(x, y);
+    if (s.label) label([{ parts: [[s.label, COLORS.star]], px: textPx("camp1"), bold: true }], x + 12, y);
+    hits.push({ x, y, r: 10, tip: `<b style="color:${COLORS.star}">★ ${esc(s.tip || s.label || "Marked spot")}</b><br><span class="muted">${esc(s.grid)}</span>` });
   }
 }
 
@@ -635,9 +664,15 @@ updateRuns();
 
 // ---- Hover and coordinates (view-only: clicks never change data) ----
 const coord = document.getElementById("coord"), tip = document.getElementById("tip");
+// Distance from point (x, y) to the segment (ax, ay)-(bx, by).
+function segDist(x, y, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2)) : 0;
+  return Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
+}
 function nearest(x, y) {
   let best = null, bd = Infinity;
-  for (const h of hits) { const d = Math.hypot(h.x - x, h.y - y); if (d <= h.r && d < bd) { best = h; bd = d; } }
+  for (const h of hits) { const d = h.seg ? segDist(x, y, ...h.seg) : Math.hypot(h.x - x, h.y - y); if (d <= h.r && d < bd) { best = h; bd = d; } }
   return best;
 }
 // In-game grid at a screen point, to 1 m (truncated, so 197.99 is still in square 197); null when off the map.
