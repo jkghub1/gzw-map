@@ -586,7 +586,28 @@ layerBar.appendChild(pick);
 const about = document.getElementById("about"), aboutBack = document.getElementById("aboutBack");
 const showAbout = on => { about.style.display = aboutBack.style.display = on ? "block" : "none"; };
 const aboutBtn = document.createElement("button");
-aboutBtn.id = "aboutBtn"; aboutBtn.title = "About & credits"; aboutBtn.textContent = "ⓘ About";
+// J's 16x16 pixel "i" icon ("#" = drawn in the button's text colour, "." = transparent).
+const INFO_PIXELS = [
+  "......####......",
+  "....##....##....",
+  "...#........#...",
+  "..#....##....#..",
+  ".#.....##.....#.",
+  ".#............#.",
+  "#......##......#",
+  "#......##......#",
+  "#......##......#",
+  "#......##......#",
+  ".#.....##.....#.",
+  ".#.....##.....#.",
+  "..#....##....#..",
+  "...#........#...",
+  "....##....##....",
+  "......####......",
+];
+const INFO_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges" fill="currentColor">` +
+  `<path d="${INFO_PIXELS.flatMap((row, y) => [...row].map((ch, x) => ch === "#" ? `M${x} ${y}h1v1h-1z` : "")).join("")}"/></svg>`;
+aboutBtn.id = "aboutBtn"; aboutBtn.title = "About & credits"; aboutBtn.innerHTML = INFO_SVG + "About";
 aboutBtn.onclick = () => showAbout(true);
 layerBar.appendChild(aboutBtn);
 aboutBack.onclick = about.querySelector(".close").onclick = () => showAbout(false);
