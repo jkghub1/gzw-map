@@ -56,7 +56,7 @@ function load(key, fallback) { try { return JSON.parse(localStorage.getItem(key)
 function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
 // Statuses are read-only and come from campsite_status.json (via data.js); clear any old click overrides.
 try { localStorage.removeItem("gzw-camp-status"); } catch {}
-const layers = { locations: true, camps: true, crates: true, caches: true, toolboxes: true, hackparts: true, lzs: true, cops: true, bases: true, route: false };
+const layers = { locations: true, camps: true, crates: true, caches: true, toolboxes: true, hackparts: true, lzs: true, cops: true, bases: true, grid: true, route: false };
 const savedLayers = load("gzw-layers", {});
 for (const k of Object.keys(layers)) if (typeof savedLayers?.[k] === "boolean") layers[k] = savedLayers[k];
 const campStatus = c => c.status || "unknown";
@@ -334,19 +334,66 @@ function drawRouteMarks(px) {
 }
 
 // 1x1 grid lines (100 m): faint in the base tiles, so strengthen them as you zoom in. 10x10 lines stay as baked.
+// Grid (Grid button): 100 m lines, heavier 1 km lines, "180,150" tags at each 1 km corner and the cell numbers in the
+// map margin. Line widths and text sizes are in map-image pixels, as when the grid was baked into the imagery, so it
+// scales with zoom like the map does.
 function drawGrid() {
-  const cell = 100 / RES * view.s;                        // screen px per grid square
-  const a = Math.min(0.45, Math.max(0, (cell - 16) / 120));
-  if (a <= 0) return;
+  if (!layers.grid) return;
+  const s = view.s, cell = 100 / RES * s;                 // screen px per grid square
   const [x0, y0] = toScreen(0, 8000), [x1, y1] = toScreen(14000, 0);
-  const iMin = Math.max(1, Math.ceil(-x0 / cell)), iMax = Math.min(139, Math.floor((innerWidth - x0) / cell));
-  const jMin = Math.max(1, Math.ceil(-y0 / cell)), jMax = Math.min(79, Math.floor((innerHeight - y0) / cell));
+  const iMin = Math.max(0, Math.ceil(-x0 / cell)), iMax = Math.min(140, Math.floor((innerWidth - x0) / cell));
+  const jMin = Math.max(0, Math.ceil(-y0 / cell)), jMax = Math.min(80, Math.floor((innerHeight - y0) / cell));
+  const top = Math.max(0, y0), bottom = Math.min(innerHeight, y1), left = Math.max(0, x0), right = Math.min(innerWidth, x1);
+  const lines = (major, width) => {
+    const snap = v => width <= 1 ? Math.round(v) + 0.5 : v;
+    ctx.beginPath();
+    for (let i = iMin; i <= iMax; i++) if ((i % 10 === 0) === major) { const x = snap(x0 + i * cell); ctx.moveTo(x, top); ctx.lineTo(x, bottom); }
+    for (let j = jMin; j <= jMax; j++) if ((j % 10 === 0) === major) { const y = snap(y0 + j * cell); ctx.moveTo(left, y); ctx.lineTo(right, y); }
+    ctx.lineWidth = width; ctx.stroke();
+  };
   ctx.save();
-  ctx.strokeStyle = `rgba(255,255,255,${a})`; ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let i = iMin; i <= iMax; i++) if (i % 10) { const x = Math.round(x0 + i * cell) + 0.5; ctx.moveTo(x, Math.max(0, y0)); ctx.lineTo(x, Math.min(innerHeight, y1)); }
-  for (let j = jMin; j <= jMax; j++) if (j % 10) { const y = Math.round(y0 + j * cell) + 0.5; ctx.moveTo(Math.max(0, x0), y); ctx.lineTo(Math.min(innerWidth, x1), y); }
-  ctx.stroke();
+  // 100 m lines: 1 px, stronger as the squares grow; hidden while the squares are tiny.
+  if (cell >= 4) {
+    ctx.strokeStyle = `rgba(255,255,255,${Math.max(Math.min(0.45, (cell - 16) / 120), 0.15 * Math.min(1, s))})`;
+    lines(false, 1);
+  }
+  // 1 km lines: 3 image px wide; below 1 screen px they stay 1 px and fade instead.
+  const w = 3 * s;
+  ctx.strokeStyle = `rgba(255,255,255,${0.47 * Math.min(1, w)})`;
+  lines(true, Math.max(1, w));
+
+  ctx.lineJoin = "round";
+  // "180,150" tag at the bottom-left corner of each 1 km square.
+  if (26 * s >= 4) {
+    ctx.font = `700 ${26 * s}px "Segoe UI", sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+    ctx.lineWidth = 6 * s; ctx.strokeStyle = "rgba(0,0,0,0.78)"; ctx.fillStyle = "rgba(255,214,102,0.9)";
+    for (let i = Math.floor(iMin / 10) * 10; i < 140 && i <= iMax; i += 10)
+      for (let j = 0; j < 80; j += 10) {
+        const x = x0 + i * cell + 6 * s, y = y0 + (80 - j) * cell - 6 * s;
+        if (y < 0 || y - 26 * s > innerHeight) continue;
+        const t = `${100 + i},${100 + j}`;
+        ctx.strokeText(t, x, y); ctx.fillText(t, x, y);
+      }
+  }
+  // Cell numbers in the margin round the map, centred on each 100 m square (1 km ones bigger, bold and yellow).
+  if (30 * s >= 4) {
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const style = k => {
+      ctx.font = k % 10 ? `400 ${30 * s}px "Segoe UI", sans-serif` : `700 ${36 * s}px "Segoe UI", sans-serif`;
+      ctx.fillStyle = k % 10 ? "rgb(200,205,210)" : "rgb(255,214,102)";
+    };
+    for (let i = Math.max(0, iMin - 1); i < 140 && i <= iMax; i++) {
+      style(i);
+      const x = x0 + (i + 0.5) * cell;
+      for (const y of [y0 - 75 * s, y1 + 75 * s]) ctx.fillText(String(100 + i), x, y);
+    }
+    for (let j = 0; j < 80; j++) {
+      const y = y1 - (j + 0.5) * cell;
+      if (y < -cell || y > innerHeight + cell) continue;
+      style(j);
+      for (const x of [x0 - 75 * s, x1 + 75 * s]) ctx.fillText(String(100 + j), x, y);
+    }
+  }
   ctx.restore();
 }
 
@@ -591,6 +638,7 @@ const LAYER_DEFS = [
   ["lzs", "Landing zones", LZ_SVG],
   ["cops", "COPs", SW(`<path d="M0-6 6 5-6 5Z" fill="${COLORS.cop}" stroke="#000" stroke-width="1.5"/>`)],
   ["bases", "Bases", SW(`<rect x="-5" y="-5" width="10" height="10" fill="${COLORS.base}" stroke="#000" stroke-width="1.5"/>`)],
+  ["grid", "Grid", SW(`<path d="M-6-2.5H6M-6 2.5H6M-2.5-6V6M2.5-6V6" stroke="#fff" stroke-width="1.5" opacity=".85"/>`)],
   ["route", `Loot route <span class="prealpha">PRE-<br>ALPHA</span>`, SW(`<path d="M-6 4 -1-2 2 2 6-5" fill="none" stroke="${RUN_COLORS[0]}" stroke-width="2.5"/>`)],
 ];
 const layerBar = document.getElementById("layers");
