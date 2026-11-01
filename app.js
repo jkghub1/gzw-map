@@ -34,7 +34,7 @@ function textPx(kind) {
 }
 const COLORS = {
   trashed: "#ff4d2e", campsite: "#00c8ff", remote: "#be78ff", crate: "#3884ff", cache: "#a64dff", lz: "#fdf535", lzOther: "#9a8a3a", star: "#ff2dbe", cacheNotFound: "#6b5a7d",
-  cop: "#f5f5f5", base: "#2ecc71", heli: "#ff3d00", toolbox: "#ff9f1a",
+  cop: "#f5f5f5", base: "#2ecc71", heli: "#ff3d00", toolbox: "#ff9f1a", hackpart: "#e01e1e",
   good: "#5ae678", "good?": "#ffb000", bad: "#ff5a5a", unknown: "#bec4cc",
 };
 // Extra hover line for a camp status.
@@ -56,7 +56,7 @@ function load(key, fallback) { try { return JSON.parse(localStorage.getItem(key)
 function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
 // Statuses are read-only and come from campsite_status.json (via data.js); clear any old click overrides.
 try { localStorage.removeItem("gzw-camp-status"); } catch {}
-const layers = { locations: true, camps: true, crates: true, caches: true, toolboxes: true, lzs: true, cops: true, bases: true, route: false };
+const layers = { locations: true, camps: true, crates: true, caches: true, toolboxes: true, hackparts: true, lzs: true, cops: true, bases: true, route: false };
 const savedLayers = load("gzw-layers", {});
 for (const k of Object.keys(layers)) if (typeof savedLayers?.[k] === "boolean") layers[k] = savedLayers[k];
 const campStatus = c => c.status || "unknown";
@@ -444,6 +444,13 @@ function draw() {
     icon.spanner(x, y, r * 0.85, COLORS.toolbox);
     hits.push({ x, y, r: r + 4, tip: `<b>Tool Box</b><br><span class="muted">${esc(t.grid)} · ${esc(t.area)}</span>` });
   }
+  // World items that dismantle into hacking tool parts (plain red square for now, J).
+  if (layers.hackparts) for (const h of G.hackparts || []) {
+    const [x, y] = toScreen(h.X, h.Y); if (!onScreen(x, y)) continue;
+    icon.square(x, y, r * 0.8, COLORS.hackpart);
+    hits.push({ x, y, r: r + 4, tip: `<b>${esc(h.item)}</b><br>Dismantle → ${esc(h.part)} <span class="muted">(tier ${esc(h.tier)} hacking tool)</span>` +
+      `<br><span class="muted">${esc(h.grid)} · ${esc(h.area)}</span>` });
+  }
   if (layers.lzs) for (const l of G.lzs) {
     const [x, y] = toScreen(l.X, l.Y); if (!onScreen(x, y)) continue;
     icon.lz(x, y, r, lzOpen(l));
@@ -520,7 +527,8 @@ function draw() {
     const [x, y] = toScreen(s.X, s.Y); if (!onScreen(x, y)) continue;
     icon.star(x, y);
     if (s.label) label([{ parts: [[s.label, COLORS.star]], px: textPx("camp1"), bold: true }], x + 12, y);
-    hits.push({ x, y, r: 10, tip: `<b style="color:${COLORS.star}">★ ${esc(s.tip || s.label || "Marked spot")}</b><br><span class="muted">${esc(s.grid)}</span>` });
+    const img = s.image ? `<img src="${esc(s.image)}" alt="">` : "";
+    hits.push({ x, y, r: 10, tip: `<b style="color:${COLORS.star}">★ ${esc(s.tip || s.label || "Marked spot")}</b><br><span class="muted">${esc(s.grid)}</span>${img}` });
   }
 }
 
@@ -579,6 +587,7 @@ const LAYER_DEFS = [
   ["crates", "Material crates", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.crate}" stroke="#000" stroke-width="1.5"/>`)],
   ["caches", "Buried caches", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.cache}" stroke="#000" stroke-width="1.5"/>`)],
   ["toolboxes", "Tool boxes", SW(`<g transform="rotate(45)" fill="none" stroke-linecap="round"><path d="M1.9-5.1A2.9 2.9 0 1 1-1.9-5.1M0-.8V6.2" stroke="#000" stroke-width="4.6"/><path d="M1.9-5.1A2.9 2.9 0 1 1-1.9-5.1M0-.8V6.2" stroke="${COLORS.toolbox}" stroke-width="2.6"/></g>`)],
+  ["hackparts", "Hacking parts", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.hackpart}" stroke="#000" stroke-width="1.5"/>`)],
   ["lzs", "Landing zones", LZ_SVG],
   ["cops", "COPs", SW(`<path d="M0-6 6 5-6 5Z" fill="${COLORS.cop}" stroke="#000" stroke-width="1.5"/>`)],
   ["bases", "Bases", SW(`<rect x="-5" y="-5" width="10" height="10" fill="${COLORS.base}" stroke="#000" stroke-width="1.5"/>`)],
@@ -683,13 +692,23 @@ function gridAt(sx, sy) {
   return `${(100 + Math.floor(X) / 100).toFixed(2)}, ${(100 + Math.floor(Y) / 100).toFixed(2)}`;
 }
 
+let tipHtml = "";
 new OpenSeadragon.MouseTracker({
   element: viewer.container,
   moveHandler: e => {
     if (!view) return;
     coord.firstChild.nodeValue = gridAt(e.position.x, e.position.y) || "—";
     const h = nearest(e.position.x, e.position.y);
-    if (h) { tip.innerHTML = h.tip; tip.style.display = "block"; tip.style.left = (e.position.x + 16) + "px"; tip.style.top = (e.position.y + 12) + "px"; }
+    if (h) {
+      // Only rebuild the tip when it changes, so a star's image isn't reloaded on every mouse move.
+      if (tipHtml !== h.tip) { tip.innerHTML = tipHtml = h.tip; }
+      tip.style.display = "block";
+      // Flip to the other side of the cursor when the tip (e.g. with an image) would run off the map.
+      const box = viewer.container.getBoundingClientRect();
+      const left = e.position.x + 16 + tip.offsetWidth > box.width ? e.position.x - 16 - tip.offsetWidth : e.position.x + 16;
+      const top = e.position.y + 12 + tip.offsetHeight > box.height ? e.position.y - 12 - tip.offsetHeight : e.position.y + 12;
+      tip.style.left = Math.max(0, left) + "px"; tip.style.top = Math.max(0, top) + "px";
+    }
     else tip.style.display = "none";
   },
   leaveHandler: () => { tip.style.display = "none"; },
