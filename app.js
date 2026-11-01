@@ -698,6 +698,7 @@ aboutBtn.onclick = () => showAbout(true);
 layerBar.appendChild(aboutBtn);
 aboutBack.onclick = about.querySelector(".close").onclick = () => showAbout(false);
 for (const el of document.querySelectorAll(".updated")) el.textContent = G.updated || "—";
+for (const el of document.querySelectorAll(".version")) el.textContent = G.version ? `Version ${G.version}` : "";
 
 // Keep the run key just above the help box, whose height changes when it wraps.
 function placeRuns() {
