@@ -56,7 +56,7 @@ function load(key, fallback) { try { return JSON.parse(localStorage.getItem(key)
 function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
 // Statuses are read-only and come from campsite_status.json (via data.js); clear any old click overrides.
 try { localStorage.removeItem("gzw-camp-status"); } catch {}
-const layers = { locations: true, camps: true, crates: true, caches: true, toolboxes: false, lzs: true, cops: true, bases: true, route: false };
+const layers = { locations: true, camps: true, crates: true, caches: true, toolboxes: true, lzs: true, cops: true, bases: true, route: false };
 const savedLayers = load("gzw-layers", {});
 for (const k of Object.keys(layers)) if (typeof savedLayers?.[k] === "boolean") layers[k] = savedLayers[k];
 const campStatus = c => c.status || "unknown";
