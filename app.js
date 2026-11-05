@@ -555,7 +555,7 @@ function draw() {
       label([{ parts: [[o.name.toUpperCase(), COLORS.lz]], px: textPx("lz"), bold: true }], lx, y);   // the icon already says LZ
     }
   }
-  // Tac map "Sub POI" names (white, outlined), lowest-priority labels, only from 4× zoom (J).
+  // Tac map "Sub POI" names (white, outlined), lowest-priority labels, only from 3× zoom (J).
   if (layers.subpois && view.k >= SUBPOI_MIN_K) for (const p of G.subpois || []) {
     const [x, y] = toScreen(p.X, p.Y); if (!onScreen(x, y, 120)) continue;
     if (label([{ parts: [[p.name, "#fff"]], px: textPx("camp2"), bold: false }], x, y, "center"))
@@ -602,7 +602,7 @@ function draw() {
   }
 }
 const FOUND_MS = 4000;
-const SUBPOI_MIN_K = 2;   // Sub POI names show from zoom 4× (k = log2 of zoom)
+const SUBPOI_MIN_K = Math.log2(2.95);   // Sub POI names show from zoom 3× (k = log2 of zoom; 2.95 so the "3.0×" readout always shows them)
 
 // Distance labels: metres for each walking leg, at the leg's midpoint. Shown only where they fit.
 function legLabel(a, b, metres, color, px) {
@@ -655,7 +655,7 @@ sizeCanvas();
 const SW = (inner) => `<svg width="14" height="14" viewBox="-7 -7 14 14">${inner}</svg>`;
 const LAYER_DEFS = [
   ["locations", "Locations", SW(`<text x="0" y="4.5" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">A</text>`)],
-  ["subpois", `Sub POIs <span class="prealpha zoomonly">&gt; 4X<br>ZOOM<br>ONLY</span>`, SW(`<text x="0" y="3.5" text-anchor="middle" font-size="10" font-weight="400" fill="#fff" stroke="#000" stroke-width="2" paint-order="stroke">a</text>`)],
+  ["subpois", `Sub POIs <span class="prealpha zoomonly">&gt; 3×<br>ZOOM<br>ONLY</span>`, SW(`<text x="0" y="3.5" text-anchor="middle" font-size="10" font-weight="400" fill="#fff" stroke="#000" stroke-width="2" paint-order="stroke">a</text>`)],
   ["camps", "Campsites", SW(`<circle r="5" fill="${COLORS.campsite}" stroke="#000" stroke-width="1.5"/>`)],
   ["crates", "Material crates", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.crate}" stroke="#000" stroke-width="1.5"/>`)],
   ["caches", "Buried caches", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.cache}" stroke="#000" stroke-width="1.5"/>`)],
