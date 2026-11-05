@@ -56,7 +56,7 @@ function load(key, fallback) { try { return JSON.parse(localStorage.getItem(key)
 function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
 // Statuses are read-only and come from campsite_status.json (via data.js); clear any old click overrides.
 try { localStorage.removeItem("gzw-camp-status"); } catch {}
-const layers = { locations: true, camps: true, crates: true, caches: true, toolboxes: true, hackparts: true, lzs: true, cops: true, bases: true, grid: true, route: false };
+const layers = { locations: true, subpois: true, camps: true, crates: true, caches: true, toolboxes: true, hackparts: true, lzs: true, cops: true, bases: true, grid: true, route: false };
 const savedLayers = load("gzw-layers", {});
 for (const k of Object.keys(layers)) if (typeof savedLayers?.[k] === "boolean") layers[k] = savedLayers[k];
 const campStatus = c => c.status || "unknown";
@@ -555,6 +555,12 @@ function draw() {
       label([{ parts: [[o.name.toUpperCase(), COLORS.lz]], px: textPx("lz"), bold: true }], lx, y);   // the icon already says LZ
     }
   }
+  // Tac map "Sub POI" names (white, outlined), lowest-priority labels, only from 4× zoom (J).
+  if (layers.subpois && view.k >= SUBPOI_MIN_K) for (const p of G.subpois || []) {
+    const [x, y] = toScreen(p.X, p.Y); if (!onScreen(x, y, 120)) continue;
+    if (label([{ parts: [[p.name, "#fff"]], px: textPx("camp2"), bold: false }], x, y, "center"))
+      hits.push({ x, y, r: 10, tip: `<b>${esc(p.name)}</b><br><span class="muted">${esc(p.grid)} · ${esc(p.area)}</span>` });
+  }
   if (layers.route) drawDistances(textPx("distance"));
   for (const [x, y, c, st] of campIcons) {
     icon.circle(x, y, r, campColor(c.type));
@@ -577,7 +583,26 @@ function draw() {
     const img = s.image ? `<img src="${esc(s.image)}" alt="">` : "";
     hits.push({ x, y, r: 10, tip: `<b style="color:${COLORS.star}">★ ${esc(s.tip || s.label || "Marked spot")}</b><br><span class="muted">${esc(s.grid)}</span>${img}` });
   }
+  // Search result: two rings pulsing outward for FOUND_MS, then gone.
+  if (found) {
+    const t = (performance.now() - found.t0) / FOUND_MS;
+    if (t >= 1) found = null;
+    else {
+      const [x, y] = toScreen(found.X, found.Y);
+      ctx.save(); ctx.lineWidth = 3;
+      for (const ph of [0, 0.5]) {
+        const f = (t * 4 + ph) % 1;   // four pulses
+        ctx.globalAlpha = (1 - f) * Math.min(1, (1 - t) * 4);
+        ctx.strokeStyle = "#000"; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(x, y, 14 + f * 46, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = "#ffd666"; ctx.lineWidth = 3; ctx.stroke();
+      }
+      ctx.restore();
+      redraw();   // keep animating
+    }
+  }
 }
+const FOUND_MS = 4000;
+const SUBPOI_MIN_K = 2;   // Sub POI names show from zoom 4× (k = log2 of zoom)
 
 // Distance labels: metres for each walking leg, at the leg's midpoint. Shown only where they fit.
 function legLabel(a, b, metres, color, px) {
@@ -630,6 +655,7 @@ sizeCanvas();
 const SW = (inner) => `<svg width="14" height="14" viewBox="-7 -7 14 14">${inner}</svg>`;
 const LAYER_DEFS = [
   ["locations", "Locations", SW(`<text x="0" y="4.5" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">A</text>`)],
+  ["subpois", `Sub POIs <span class="prealpha zoomonly">&gt; 4X<br>ZOOM<br>ONLY</span>`, SW(`<text x="0" y="3.5" text-anchor="middle" font-size="10" font-weight="400" fill="#fff" stroke="#000" stroke-width="2" paint-order="stroke">a</text>`)],
   ["camps", "Campsites", SW(`<circle r="5" fill="${COLORS.campsite}" stroke="#000" stroke-width="1.5"/>`)],
   ["crates", "Material crates", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.crate}" stroke="#000" stroke-width="1.5"/>`)],
   ["caches", "Buried caches", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.cache}" stroke="#000" stroke-width="1.5"/>`)],
@@ -699,6 +725,73 @@ layerBar.appendChild(aboutBtn);
 aboutBack.onclick = about.querySelector(".close").onclick = () => showAbout(false);
 for (const el of document.querySelectorAll(".updated")) el.textContent = G.updated || "—";
 for (const el of document.querySelectorAll(".version")) el.textContent = G.version ? `Version ${G.version}` : "";
+
+// ---- Search: type a place, camp letter, LZ, COP, base, star note or zone; Enter flies there and rings it ----
+const norm = s => String(s).toLowerCase().replace(/\s+/g, " ").trim();
+const SEARCH = [   // { name, kind, sub, keys, X, Y, zoom (× home), layer }
+  ...G.locations.map(L => ({ name: L.name, kind: "Location", keys: [L.name], X: L.X, Y: L.Y, zoom: 5, layer: "locations" })),
+  ...G.camps.map(c => ({ name: `Camp ${c.letter}`, kind: c.type, sub: `${c.grid} · ${c.area} · ${campStatus(c)}`,
+                         keys: [c.letter, `camp ${c.letter}`], X: c.X, Y: c.Y, zoom: 10, layer: "camps" })),
+  ...G.lzs.map(l => ({ name: `LZ ${l.name}`, kind: "Landing zone", sub: l.grid, keys: [l.name, `lz ${l.name}`], X: l.X, Y: l.Y, zoom: 10, layer: "lzs" })),
+  ...G.cops.map(c => ({ name: `COP ${c.name}`, kind: "COP", sub: c.grid, keys: [c.name, `cop ${c.name}`], X: c.X, Y: c.Y, zoom: 10, layer: "cops" })),
+  ...G.bases.map(b => ({ name: FACTIONS[b.faction].name, kind: "Operation base", sub: b.grid,
+                         keys: [FACTIONS[b.faction].name, b.faction, `${b.faction} base`], X: b.X, Y: b.Y, zoom: 8, layer: "bases" })),
+  ...(G.stars || []).map(s => ({ name: s.label || s.tip || "Marked spot", kind: "★ Star", sub: s.grid, keys: [s.label || "", s.tip || ""], X: s.X, Y: s.Y, zoom: 12 })),
+  ...(G.zones || []).map(z => ({ name: z.name, kind: "Danger zone", keys: [z.name],
+                               X: z.points.reduce((a, p) => a + p[0], 0) / z.points.length, Y: z.points.reduce((a, p) => a + p[1], 0) / z.points.length, zoom: 8 })),
+  ...(G.subpois || []).map(p => ({ name: p.name, kind: "Sub POI", sub: `${p.grid} · ${p.area}`, keys: [p.name], X: p.X, Y: p.Y, zoom: 10, layer: "subpois" })),
+];
+for (const e of SEARCH) e.keys = e.keys.map(norm).filter(Boolean);
+const KIND_ORDER = ["Location", "Operation base", "Landing zone", "COP", "Danger zone", "★ Star", "Sub POI"];
+// Best match first: exact, then starts with, then a word starts with, then contains (3+ letters only, so "a" isn't everything).
+function searchFor(q) {
+  q = norm(q); if (!q) return [];
+  const score = e => Math.min(...e.keys.map(k => k === q ? 0 : k.startsWith(q) ? 1 : k.split(/[ ,:;()/-]+/).some(w => w.startsWith(q)) ? 2 : q.length > 2 && k.includes(q) ? 3 : 9));
+  const rank = e => { const i = KIND_ORDER.indexOf(e.kind); return i < 0 ? 1.5 : i; };   // camps sit after locations/bases
+  return SEARCH.map(e => [score(e), e]).filter(([s]) => s < 9)
+    .sort((a, b) => a[0] - b[0] || rank(a[1]) - rank(b[1]) || a[1].name.localeCompare(b[1].name, undefined, { numeric: true }))
+    .slice(0, 8).map(([, e]) => e);
+}
+let found = null;   // { X, Y, t0 }: pulsing ring drawn by draw() for a few seconds after a search
+function goTo(e) {
+  if (e.layer && !layers[e.layer]) layerBar.querySelector(`[data-layer=${e.layer}]`).click();   // show what was found
+  const vp = viewer.viewport, p = vp.imageToViewportCoordinates(OX + e.X / RES, OY + (8000 - e.Y) / RES);
+  vp.panTo(p);
+  vp.zoomTo(Math.max(vp.getZoom(), vp.getHomeZoom() * e.zoom));   // about the centre, which panTo is moving to p
+  found = { X: e.X, Y: e.Y, t0: performance.now() };
+  redraw();
+}
+const searchBox = document.createElement("div");
+searchBox.id = "searchBox";
+searchBox.innerHTML = `<input type="search" placeholder="Search: fort, A, mike 2…" aria-label="Search the map" autocomplete="off" spellcheck="false">` +
+                      `<div id="searchList" class="panel" role="listbox"></div>`;
+layerBar.prepend(searchBox);
+const searchIn = searchBox.querySelector("input"), searchList = searchBox.querySelector("#searchList");
+let results = [], sel = 0;
+function showResults() {
+  results = searchFor(searchIn.value); sel = 0;
+  searchList.innerHTML = results.length ? results.map((e, i) =>
+    `<div role="option" data-i="${i}"><span>${esc(e.name.length > 60 ? e.name.slice(0, 57) + "…" : e.name)}</span>` +
+    `<span class="muted">${esc(e.kind)}${e.sub ? " · " + esc(e.sub) : ""}</span></div>`).join("")
+    : searchIn.value.trim() ? `<div class="muted none">No matches</div>` : "";
+  searchList.style.display = searchList.innerHTML ? "block" : "none";
+  markSel();
+}
+function markSel() { searchList.querySelectorAll("[data-i]").forEach((d, i) => d.classList.toggle("sel", i === sel)); }
+const pickResult = i => { if (results[i]) { goTo(results[i]); searchList.style.display = "none"; searchIn.blur(); } };
+searchIn.addEventListener("input", showResults);
+searchIn.addEventListener("focus", () => { if (searchIn.value) showResults(); });
+searchIn.addEventListener("blur", () => { searchList.style.display = "none"; });
+searchIn.addEventListener("keydown", e => {
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); if (results.length) { sel = (sel + (e.key === "ArrowDown" ? 1 : results.length - 1)) % results.length; markSel(); } }
+  else if (e.key === "Enter") pickResult(sel);
+  else if (e.key === "Escape") { searchIn.value = ""; showResults(); searchIn.blur(); }
+});
+searchList.addEventListener("mousedown", e => {   // mousedown, so the input's blur doesn't hide the list first
+  const d = e.target.closest("[data-i]"); if (!d) return;
+  e.preventDefault(); pickResult(+d.dataset.i);
+});
+searchList.addEventListener("mousemove", e => { const d = e.target.closest("[data-i]"); if (d && +d.dataset.i !== sel) { sel = +d.dataset.i; markSel(); } });
 
 // Keep the run key just above the help box, whose height changes when it wraps.
 function placeRuns() {
@@ -796,4 +889,9 @@ document.addEventListener("pointerdown", e => { if (e.button === 0) document.doc
 for (const ev of ["pointerup", "pointercancel"]) document.addEventListener(ev, e => { if (e.button === 0 || e.buttons === 0) lmbUp(); }, true);
 addEventListener("blur", lmbUp);
 
-document.addEventListener("keydown", e => { if (e.target.closest("input, select, textarea")) return; if (e.key === "Escape") { hideCtx(); showAbout(false); } if (e.key === "0") viewer.viewport.goHome(); });
+document.addEventListener("keydown", e => {
+  if (e.target.closest("input, select, textarea")) return;
+  if (e.key === "Escape") { hideCtx(); showAbout(false); }
+  if (e.key === "0") viewer.viewport.goHome();
+  if (e.key === "/") { e.preventDefault(); searchIn.focus(); searchIn.select(); }
+});
