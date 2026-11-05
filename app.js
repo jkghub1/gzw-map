@@ -495,8 +495,9 @@ function draw() {
   if (layers.hackparts) for (const h of G.hackparts || []) {
     const [x, y] = toScreen(h.X, h.Y); if (!onScreen(x, y)) continue;
     icon.square(x, y, r * 0.8, COLORS.hackpart);
+    const stats = [h.size, h.kg != null && `${h.kg} kg`].filter(Boolean).join(" · ");   // inventory size and weight (J)
     hits.push({ x, y, r: r + 4, tip: `<b>${esc(h.item)}</b><br>Dismantle → ${esc(h.part)} <span class="muted">(tier ${esc(h.tier)} hacking tool)</span>` +
-      `<br><span class="muted">${esc(h.grid)} · ${esc(h.area)}</span>` });
+      (stats ? `<br>${esc(stats)}` : "") + `<br><span class="muted">${esc(h.grid)} · ${esc(h.area)}</span>` + hackRecipe(h) });
   }
   if (layers.lzs) for (const l of G.lzs) {
     const [x, y] = toScreen(l.X, l.Y); if (!onScreen(x, y)) continue;
@@ -600,6 +601,14 @@ function draw() {
       redraw();   // keep animating
     }
   }
+}
+// Hacking part hover: item picture with the tool it helps build beside it, listing the items to dismantle; this one ticked (J).
+function hackRecipe(h) {
+  const tool = (G.hackTools || {})[h.tier];
+  const list = tool ? `<div class="req"><b>Level ${esc(h.tier)} Hacking Tool</b><div class="muted">(${esc(tool.name)}) · Requires:</div><ul>` +
+    tool.needs.map(n => n === h.item ? `<li class="me">${esc(n)} ✓</li>` : `<li>${esc(n)}</li>`).join("") + `</ul></div>` : "";
+  const img = h.image ? `<img class="item" src="${esc(h.image)}" alt="">` : "";
+  return img || list ? `<div class="recipe">${img}${list}</div>` : "";
 }
 const FOUND_MS = 4000;
 const SUBPOI_MIN_K = Math.log2(2.95);   // Sub POI names show from zoom 3× (k = log2 of zoom; 2.95 so the "3.0×" readout always shows them)
@@ -843,18 +852,37 @@ new OpenSeadragon.MouseTracker({
     const h = nearest(e.position.x, e.position.y);
     if (h) {
       // Only rebuild the tip when it changes, so a star's image isn't reloaded on every mouse move.
-      if (tipHtml !== h.tip) { tip.innerHTML = tipHtml = h.tip; }
+      if (tipHtml !== h.tip) { tip.innerHTML = tipHtml = h.tip; usePreloaded(); }
       tip.style.display = "block";
-      // Flip to the other side of the cursor when the tip (e.g. with an image) would run off the map.
-      const box = viewer.container.getBoundingClientRect();
-      const left = e.position.x + 16 + tip.offsetWidth > box.width ? e.position.x - 16 - tip.offsetWidth : e.position.x + 16;
-      const top = e.position.y + 12 + tip.offsetHeight > box.height ? e.position.y - 12 - tip.offsetHeight : e.position.y + 12;
-      tip.style.left = Math.max(0, left) + "px"; tip.style.top = Math.max(0, top) + "px";
+      placeTip(e.position.x, e.position.y);
     }
     else tip.style.display = "none";
   },
   leaveHandler: () => { tip.style.display = "none"; },
 }).setTracking(true);
+// Flip the tip to the other side of the cursor when it (e.g. with an image) would run off the map.
+let tipAt = [0, 0];
+function placeTip(x, y) {
+  tipAt = [x, y];
+  const box = viewer.container.getBoundingClientRect();
+  const left = x + 16 + tip.offsetWidth > box.width ? x - 16 - tip.offsetWidth : x + 16;
+  const top = y + 12 + tip.offsetHeight > box.height ? y - 12 - tip.offsetHeight : y + 12;
+  tip.style.left = Math.max(0, left) + "px"; tip.style.top = Math.max(0, top) + "px";
+}
+// A picture that finishes loading after the tip is shown makes it bigger: place it again so it isn't cut off.
+tip.addEventListener("load", () => { if (tip.style.display === "block") placeTip(...tipAt); }, true);
+// Fetch the hover pictures (hacking parts, stars) once, up front, and put those same loaded <img> elements into the tip.
+// A fresh <img> would download again whenever the server says not to cache (the local serve.py does), which took seconds.
+const preloaded = new Map();
+for (const src of new Set([...(G.hackparts || []), ...(G.stars || [])].map(o => o.image).filter(Boolean))) {
+  const im = new Image(); im.src = src; preloaded.set(src, im);
+}
+function usePreloaded() {
+  for (const im of tip.querySelectorAll("img")) {
+    const pre = preloaded.get(im.getAttribute("src"));
+    if (pre) { pre.className = im.className; pre.alt = im.alt; im.replaceWith(pre); }
+  }
+}
 
 // Right-click menu: copy the in-game coords under the cursor to the clipboard (reads only, changes nothing).
 const ctxMenu = document.getElementById("ctx"), ctxCopy = document.getElementById("ctx-copy");
