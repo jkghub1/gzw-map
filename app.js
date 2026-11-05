@@ -248,6 +248,83 @@ const LZ_SVG = `<svg width="14" height="14" viewBox="0 0 ${LZ_N} ${LZ_N}" shape-
   `<path d="${LZ_PIXELS.flatMap((row, y) => [...row].map((ch, x) => ch === "#" ? `M${x} ${y}h1v1h-1z` : "")).join("")}"/></svg>`;
 const campColor = () => COLORS.campsite;   // every camp icon is blue (J); the type shows in the label
 
+// J's campsite tent: 16x16 pixel art ("#" = black, "." = camp blue, " " = clear), drawn at its native size like the LZ icon.
+const TENT_PIXELS = [
+  "       ##       ",
+  "       ##       ",
+  "      #..#      ",
+  "      #..#      ",
+  "     #....#     ",
+  "     #....#     ",
+  "    #..#...#    ",
+  "    #..##..#    ",
+  "   #...##...#   ",
+  "   #...###..#   ",
+  "  #....###...#  ",
+  "  #....####..#  ",
+  " #.....####...# ",
+  " #.....#####..# ",
+  "#......#####...#",
+  "#......######..#",
+];
+const TENT_N = TENT_PIXELS.length;
+const tentPath = ch => TENT_PIXELS.flatMap((row, y) => [...row].map((c, x) => c === ch ? `M${x} ${y}h1v1h-1z` : "")).join("");
+const TENT_INK = tentPath("#"), TENT_FILL = tentPath(".");
+const TENT_SPRITE = (() => {
+  const c = document.createElement("canvas"); c.width = c.height = TENT_N;
+  const g = c.getContext("2d");
+  g.fillStyle = COLORS.campsite; g.fill(new Path2D(TENT_FILL)); g.fillStyle = "#000"; g.fill(new Path2D(TENT_INK));
+  return c;
+})();
+icon.tent = (x, y) => {
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(TENT_SPRITE, Math.round(x - TENT_N / 2), Math.round(y - TENT_N / 2), TENT_N, TENT_N);
+  ctx.imageSmoothingEnabled = true;
+};
+const TENT_SVG = `<svg width="14" height="14" viewBox="0 0 ${TENT_N} ${TENT_N}" shape-rendering="crispEdges">` +
+  `<path d="${TENT_FILL}" fill="${COLORS.campsite}"/><path d="${TENT_INK}" fill="#000"/></svg>`;
+
+// J's building material crate: 20x20 isometric pixel art ("#" = black, "." = the crate blue, " " = clear),
+// drawn at its native size like the LZ and tent icons.
+const CRATE_PIXELS = [
+  "                    ",
+  "                    ",
+  "          ###       ",
+  "        ##...###    ",
+  "      ##..##...###  ",
+  "    ##......####.#  ",
+  "  ##..##...###...#  ",
+  "##......####.#.###  ",
+  "#.##...###...###.#  ",
+  "#...####.#.###...#  ",
+  "##...#...###.#.###  ",
+  "#.##.#.###...###.#  ",
+  "#...####.#.###...#  ",
+  "##...#...###.#.###  ",
+  "#.##.#.###...###    ",
+  "#...####.#.##       ",
+  "##...#...###        ",
+  "  ##.#.##           ",
+  "    ####            ",
+  "                    ",
+];
+const CRATE_N = CRATE_PIXELS.length;
+const cratePath = ch => CRATE_PIXELS.flatMap((row, y) => [...row].map((c, x) => c === ch ? `M${x} ${y}h1v1h-1z` : "")).join("");
+const CRATE_INK = cratePath("#"), CRATE_FILL = cratePath(".");
+const CRATE_SPRITE = (() => {
+  const c = document.createElement("canvas"); c.width = c.height = CRATE_N;
+  const g = c.getContext("2d");
+  g.fillStyle = COLORS.crate; g.fill(new Path2D(CRATE_FILL)); g.fillStyle = "#000"; g.fill(new Path2D(CRATE_INK));
+  return c;
+})();
+icon.crate = (x, y) => {
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(CRATE_SPRITE, Math.round(x - CRATE_N / 2), Math.round(y - CRATE_N / 2), CRATE_N, CRATE_N);
+  ctx.imageSmoothingEnabled = true;
+};
+const CRATE_SVG = `<svg width="14" height="14" viewBox="0 0 ${CRATE_N} ${CRATE_N}" shape-rendering="crispEdges">` +
+  `<path d="${CRATE_FILL}" fill="${COLORS.crate}"/><path d="${CRATE_INK}" fill="#000"/></svg>`;
+
 // ---- Route ----
 function dashedLine(a, b, color, width, dash) {
   ctx.save(); ctx.setLineDash(dash); ctx.strokeStyle = color; ctx.lineWidth = width;
@@ -337,6 +414,7 @@ function drawRouteMarks(px) {
 // Grid (Grid button): 100 m lines, heavier 1 km lines, "180,150" tags at each 1 km corner and the cell numbers in the
 // map margin. Line widths and text sizes are in map-image pixels, as when the grid was baked into the imagery, so it
 // scales with zoom like the map does.
+const TAG_MAX_PX = 10 * 96 / 72;   // 10 pt in CSS px
 function drawGrid() {
   if (!layers.grid) return;
   const s = view.s, cell = 100 / RES * s;                 // screen px per grid square
@@ -363,14 +441,15 @@ function drawGrid() {
   lines(true, Math.max(1, w));
 
   ctx.lineJoin = "round";
-  // "180,150" tag at the bottom-left corner of each 1 km square.
-  if (26 * s >= 4) {
-    ctx.font = `700 ${26 * s}px "Segoe UI", sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
-    ctx.lineWidth = 6 * s; ctx.strokeStyle = "rgba(0,0,0,0.78)"; ctx.fillStyle = "rgba(255,214,102,0.9)";
+  // "180,150" tag at the bottom-left corner of each 1 km square: scales with zoom up to 10 pt (J), then stays that size.
+  const tag = Math.min(26 * s, TAG_MAX_PX), ts = tag / 26;   // ts: tag scale for the outline and corner inset
+  if (tag >= 4) {
+    ctx.font = `700 ${tag}px "Segoe UI", sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+    ctx.lineWidth = 6 * ts; ctx.strokeStyle = "rgba(0,0,0,0.78)"; ctx.fillStyle = "rgba(255,214,102,0.9)";
     for (let i = Math.floor(iMin / 10) * 10; i < 140 && i <= iMax; i += 10)
       for (let j = 0; j < 80; j += 10) {
-        const x = x0 + i * cell + 6 * s, y = y0 + (80 - j) * cell - 6 * s;
-        if (y < 0 || y - 26 * s > innerHeight) continue;
+        const x = x0 + i * cell + 6 * ts, y = y0 + (80 - j) * cell - 6 * ts;
+        if (y < 0 || y - tag > innerHeight) continue;
         const t = `${100 + i},${100 + j}`;
         ctx.strokeText(t, x, y); ctx.fillText(t, x, y);
       }
@@ -476,7 +555,7 @@ function draw() {
   // Icons first (always drawn), labels afterwards in priority order.
   if (layers.crates) for (const c of G.crates) {
     const [x, y] = toScreen(c.X, c.Y); if (!onScreen(x, y)) continue;
-    icon.square(x, y, r * 0.8, COLORS.crate);
+    icon.crate(x, y);
     hits.push({ x, y, r: r + 4, tip: `<b>Building Material Crate</b><br><span class="muted">${esc(c.grid)}</span>` });
   }
   if (layers.caches) for (const c of G.caches) {
@@ -564,8 +643,9 @@ function draw() {
   }
   if (layers.route) drawDistances(textPx("distance"));
   for (const [x, y, c, st] of campIcons) {
-    icon.circle(x, y, r, campColor(c.type));
-    if (st !== "unknown") { ctx.lineWidth = 2.5; ctx.strokeStyle = COLORS[st]; ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, Math.PI * 2); ctx.stroke(); }
+    icon.tent(x, y);
+    // Good/bad ring round the tent (clear of its 16 px corners).
+    if (st !== "unknown") { ctx.lineWidth = 2.5; ctx.strokeStyle = COLORS[st]; ctx.beginPath(); ctx.arc(x, y, Math.max(r + 3.5, 12), 0, Math.PI * 2); ctx.stroke(); }
   }
   // J's pink lines (same pink as the stars), always shown. 1 px at every zoom, like the 100 m grid lines (J).
   for (const ln of G.lines || []) {
@@ -665,8 +745,8 @@ const SW = (inner) => `<svg width="14" height="14" viewBox="-7 -7 14 14">${inner
 const LAYER_DEFS = [
   ["locations", "Locations", SW(`<text x="0" y="4.5" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">A</text>`)],
   ["subpois", `Sub POIs <span class="prealpha zoomonly">&gt; 3×<br>ZOOM<br>ONLY</span>`, SW(`<text x="0" y="3.5" text-anchor="middle" font-size="10" font-weight="400" fill="#fff" stroke="#000" stroke-width="2" paint-order="stroke">a</text>`)],
-  ["camps", "Campsites", SW(`<circle r="5" fill="${COLORS.campsite}" stroke="#000" stroke-width="1.5"/>`)],
-  ["crates", "Material crates", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.crate}" stroke="#000" stroke-width="1.5"/>`)],
+  ["camps", "Campsites", TENT_SVG],
+  ["crates", "Material crates", CRATE_SVG],
   ["caches", "Buried caches", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.cache}" stroke="#000" stroke-width="1.5"/>`)],
   ["toolboxes", "Tool boxes", SW(`<g transform="rotate(45)" fill="none" stroke-linecap="round"><path d="M1.9-5.1A2.9 2.9 0 1 1-1.9-5.1M0-.8V6.2" stroke="#000" stroke-width="4.6"/><path d="M1.9-5.1A2.9 2.9 0 1 1-1.9-5.1M0-.8V6.2" stroke="${COLORS.toolbox}" stroke-width="2.6"/></g>`)],
   ["hackparts", "Hacking parts", SW(`<rect x="-4.5" y="-4.5" width="9" height="9" fill="${COLORS.hackpart}" stroke="#000" stroke-width="1.5"/>`)],
