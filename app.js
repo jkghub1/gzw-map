@@ -576,7 +576,9 @@ function draw() {
     icon.square(x, y, r * 0.8, COLORS.hackpart);
     const stats = [h.size, h.kg != null && `${h.kg} kg`].filter(Boolean).join(" · ");   // inventory size and weight (J)
     hits.push({ x, y, r: r + 4, tip: `<b>${esc(h.item)}</b><br>Dismantle → ${esc(h.part)} <span class="muted">(tier ${esc(h.tier)} hacking tool)</span>` +
-      (stats ? `<br>${esc(stats)}` : "") + `<br><span class="muted">${esc(h.grid)} · ${esc(h.area)}</span>` + hackRecipe(h) });
+      (stats ? `<br>${esc(stats)}` : "") + `<br><span class="muted">${esc(h.grid)} · ${esc(h.area)}</span>` + hackRecipe(h) +
+      (h.note ? `<div class="note">${esc(h.note)}</div>` : "") +
+      (h.photos || []).map(src => `<img class="spot" src="${esc(src)}" alt="">`).join("") });   // J's note and in-game photo of the spot
   }
   if (layers.lzs) for (const l of G.lzs) {
     const [x, y] = toScreen(l.X, l.Y); if (!onScreen(x, y)) continue;
@@ -954,7 +956,7 @@ tip.addEventListener("load", () => { if (tip.style.display === "block") placeTip
 // Fetch the hover pictures (hacking parts, stars) once, up front, and put those same loaded <img> elements into the tip.
 // A fresh <img> would download again whenever the server says not to cache (the local serve.py does), which took seconds.
 const preloaded = new Map();
-for (const src of new Set([...(G.hackparts || []), ...(G.stars || [])].map(o => o.image).filter(Boolean))) {
+for (const src of new Set([...(G.hackparts || []), ...(G.stars || [])].flatMap(o => [o.image, ...(o.photos || [])]).filter(Boolean))) {
   const im = new Image(); im.src = src; preloaded.set(src, im);
 }
 function usePreloaded() {
