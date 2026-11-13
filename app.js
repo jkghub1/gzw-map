@@ -325,6 +325,84 @@ icon.crate = (x, y) => {
 const CRATE_SVG = `<svg width="14" height="14" viewBox="0 0 ${CRATE_N} ${CRATE_N}" shape-rendering="crispEdges">` +
   `<path d="${CRATE_FILL}" fill="${COLORS.crate}"/><path d="${CRATE_INK}" fill="#000"/></svg>`;
 
+// J's 16x16 skull and crossbones for hazards such as trip wires (stars.json "icon": "skull"):
+// "#" = white, "." = black (eyes, nose); a 1 px black outline is added round the shape, so the sprite is 18x18.
+const SKULL_PIXELS = [
+  "     ######     ",
+  "    ########    ",
+  "   ##########   ",
+  "   ##########   ",
+  "   #..####..#   ",
+  "   #..####..#   ",
+  "   ##########   ",
+  "    ###..###    ",
+  "     ######     ",
+  "     ######     ",
+  "     # ## #     ",
+  " ###        ### ",
+  "    ###  ###    ",
+  "      ####      ",
+  "    ###  ###    ",
+  " ###        ### ",
+];
+const SKULL_N = SKULL_PIXELS.length + 2;
+const SKULL_SPRITE = (() => {
+  const c = document.createElement("canvas"); c.width = c.height = SKULL_N;
+  const g = c.getContext("2d");
+  const on = (r, k) => SKULL_PIXELS[r] !== undefined && SKULL_PIXELS[r][k] !== undefined && SKULL_PIXELS[r][k] !== " ";
+  g.fillStyle = "#000";
+  for (let r = -1; r <= 16; r++) for (let k = -1; k <= 16; k++)
+    if (!on(r, k) && [-1, 0, 1].some(dr => [-1, 0, 1].some(dk => on(r + dr, k + dk)))) g.fillRect(k + 1, r + 1, 1, 1);
+  SKULL_PIXELS.forEach((row, r) => [...row].forEach((ch, k) => {
+    if (ch === " ") return;
+    g.fillStyle = ch === "#" ? "#fff" : "#000"; g.fillRect(k + 1, r + 1, 1, 1);
+  }));
+  return c;
+})();
+icon.skull = (x, y) => {
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(SKULL_SPRITE, Math.round(x - SKULL_N / 2), Math.round(y - SKULL_N / 2), SKULL_N, SKULL_N);
+  ctx.imageSmoothingEnabled = true;
+};
+
+// 16x16 borosilicate Erlenmeyer flask (J's pick, sample 2) for drug / lab ingredient spots (stars.json "icon": "flask"):
+// "#" black, "." pale glass, "w" white glare, "g" volume marks.
+const FLASK_PIXELS = [
+  "     ######     ",
+  "     ##..##     ",
+  "      #w.#      ",
+  "      #w.#      ",
+  "      #..#      ",
+  "      #..#      ",
+  "     #w...#     ",
+  "     #....#     ",
+  "    #w..ggg#    ",
+  "    #......#    ",
+  "   #w...ggg.#   ",
+  "   #........#   ",
+  "  #w....ggg..#  ",
+  "  #..........#  ",
+  " #............# ",
+  " ############## ",
+];
+const FLASK_GLASS = "#cfe9f7";
+const FLASK_SPRITE = (() => {
+  const c = document.createElement("canvas"); c.width = c.height = 16;
+  const g = c.getContext("2d"), col = { "#": "#000", ".": FLASK_GLASS, w: "#fff", g: "#5f7f90" };
+  FLASK_PIXELS.forEach((row, r) => [...row].forEach((ch, k) => { if (col[ch]) { g.fillStyle = col[ch]; g.fillRect(k, r, 1, 1); } }));
+  return c;
+})();
+icon.flask = (x, y) => {
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(FLASK_SPRITE, Math.round(x - 8), Math.round(y - 8), 16, 16);
+  ctx.imageSmoothingEnabled = true;
+};
+// Star-file icons other than the pink star: drawing function, hover colour and symbol, search kind.
+const MARK_ICONS = {
+  skull: { draw: (x, y) => icon.skull(x, y), color: "#fff", sym: "☠", kind: "☠ Hazard" },
+  flask: { draw: (x, y) => icon.flask(x, y), color: FLASK_GLASS, sym: "⚗", kind: "⚗ Lab" },
+};
+
 // ---- Route ----
 function dashedLine(a, b, color, width, dash) {
   ctx.save(); ctx.setLineDash(dash); ctx.strokeStyle = color; ctx.lineWidth = width;
@@ -661,10 +739,11 @@ function draw() {
   // J's pink stars, always shown, on top of everything.
   for (const s of G.stars || []) {
     const [x, y] = toScreen(s.X, s.Y); if (!onScreen(x, y)) continue;
-    icon.star(x, y);
-    if (s.label) label([{ parts: [[s.label, COLORS.star]], px: textPx("camp1"), bold: true }], x + 12, y);
+    const mi = MARK_ICONS[s.icon], color = mi ? mi.color : COLORS.star;
+    if (mi) mi.draw(x, y); else icon.star(x, y);
+    if (s.label) label([{ parts: [[s.label, color]], px: textPx("camp1"), bold: true }], x + 12, y);
     const img = s.image ? `<img src="${esc(s.image)}" alt="">` : "";
-    hits.push({ x, y, r: 10, tip: `<b style="color:${COLORS.star}">★ ${esc(s.tip || s.label || "Marked spot")}</b><br><span class="muted">${esc(s.grid)}</span>${img}` });
+    hits.push({ x, y, r: 10, tip: `<b style="color:${color}">${mi ? "" : "★ "}${esc(s.tip || s.label || "Marked spot")}</b><br><span class="muted">${esc(s.grid)}</span>${img}` });
   }
   // Search result: two rings pulsing outward for FOUND_MS, then gone.
   if (found) {
@@ -827,7 +906,7 @@ const SEARCH = [   // { name, kind, sub, keys, X, Y, zoom (× home), layer }
   ...G.cops.map(c => ({ name: `COP ${c.name}`, kind: "COP", sub: c.grid, keys: [c.name, `cop ${c.name}`], X: c.X, Y: c.Y, zoom: 10, layer: "cops" })),
   ...G.bases.map(b => ({ name: FACTIONS[b.faction].name, kind: "Operation base", sub: b.grid,
                          keys: [FACTIONS[b.faction].name, b.faction, `${b.faction} base`], X: b.X, Y: b.Y, zoom: 8, layer: "bases" })),
-  ...(G.stars || []).map(s => ({ name: s.label || s.tip || "Marked spot", kind: "★ Star", sub: s.grid, keys: [s.label || "", s.tip || ""], X: s.X, Y: s.Y, zoom: 12 })),
+  ...(G.stars || []).map(s => ({ name: s.label || s.tip || "Marked spot", kind: MARK_ICONS[s.icon]?.kind || "★ Star", sub: s.grid, keys: [s.label || "", s.tip || ""], X: s.X, Y: s.Y, zoom: 12 })),
   ...(G.zones || []).map(z => ({ name: z.name, kind: "Danger zone", keys: [z.name],
                                X: z.points.reduce((a, p) => a + p[0], 0) / z.points.length, Y: z.points.reduce((a, p) => a + p[1], 0) / z.points.length, zoom: 8 })),
   ...(G.subpois || []).map(p => ({ name: p.name, kind: "Sub POI", sub: `${p.grid} · ${p.area}`, keys: [p.name], X: p.X, Y: p.Y, zoom: 10, layer: "subpois" })),
